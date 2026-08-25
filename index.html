@@ -1,0 +1,2288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Papelería — generador de documentos</title>
+<style>
+:root{
+  --bg:#0E1116; --panel:#161A21; --panel2:#1B212A; --line:rgba(255,255,255,.09);
+  --tx:#E8ECF3; --mut:#8B95A7; --acc:#7B61FF; --acc-soft:rgba(123,97,255,.16);
+  --stamp:#E8B33C; --danger:#E0574B;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--tx);font-family:var(--ui);font-size:14px;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+
+/* ---------- estructura ---------- */
+.topbar{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:9px}
+.brand b{font-size:15px;letter-spacing:-.01em}
+.brand span{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--mut)}
+.grow{flex:1}
+.app{display:grid;grid-template-columns:minmax(320px,400px) 1fr;height:calc(100vh - 57px)}
+@media(max-width:900px){.app{grid-template-columns:1fr;height:auto}}
+
+.panel{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:0 0 60px}
+.lienzo{background:#0A0C10;overflow:auto;padding:26px 20px 60px;display:flex;justify-content:center;align-items:flex-start}
+
+/* ---------- controles ---------- */
+.sec{border-bottom:1px solid var(--line)}
+.sec>summary{cursor:pointer;list-style:none;padding:13px 18px;display:flex;align-items:center;gap:9px;user-select:none}
+.sec>summary::-webkit-details-marker{display:none}
+.sec>summary::before{content:"";width:5px;height:5px;border-radius:1px;background:var(--mut);transition:.15s}
+.sec[open]>summary::before{background:var(--acc);transform:scale(1.5)}
+.sec>summary h2{margin:0;font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mut);font-weight:600}
+.sec[open]>summary h2{color:var(--tx)}
+.body{padding:2px 18px 20px;display:flex;flex-direction:column;gap:12px}
+
+label.f{display:flex;flex-direction:column;gap:5px}
+label.f>span{font-size:11px;color:var(--mut);letter-spacing:.02em}
+input[type=text],input[type=date],textarea,select{
+  background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:9px 10px;width:100%;outline:none;transition:.12s}
+input:focus,textarea:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono);font-size:12.5px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.5}
+
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:8px 12px;cursor:pointer;transition:.12s;font-size:13px}
+.btn:hover{border-color:rgba(255,255,255,.24)}
+.btn:active{transform:translateY(1px)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.btn.pri:hover{filter:brightness(1.1)}
+.btn.sm{padding:6px 9px;font-size:12px}
+.btn.icon{padding:5px 8px;color:var(--mut)}
+.btn.icon:hover{color:var(--danger);border-color:var(--danger)}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+
+/* campos dinámicos */
+.campo{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.campo .top{display:flex;gap:8px;align-items:center}
+.campo .top input{flex:1}
+.clave{font-family:var(--mono);font-size:11px;color:var(--acc);background:var(--acc-soft);border:1px solid transparent;border-radius:5px;padding:4px 7px;cursor:pointer;white-space:nowrap}
+.clave:hover{border-color:var(--acc)}
+.mini{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--mut);cursor:pointer}
+.mini input{accent-color:var(--acc)}
+
+/* interruptor de "solo esta aparición" */
+.btn.tog{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.btn.tog .pt{width:9px;height:9px;border-radius:50%;border:1.5px solid currentColor;flex-shrink:0}
+.btn.tog.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.tog.on .pt{background:#fff;border-color:#fff}
+#hintSolo{margin-top:-2px}
+.solobtns{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.solobtns .btn{justify-content:flex-start;text-align:left;font-size:11.5px;padding:6px 10px}
+.btn.tog.ok{background:#22c55e;border-color:#22c55e;color:#07240f;font-weight:600}
+.btn.tog.ok .pt{background:#07240f;border-color:#07240f}
+#hintSolo b{color:var(--acc)}
+
+/* cuadro que dice qué dato cambia dentro del texto capturado */
+.orig{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:7px;padding:7px 9px;display:flex;flex-direction:column;gap:3px}
+.orig .ohead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.orig .ok{font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.11em;color:var(--mut)}
+.btn.ed{padding:3px 7px;font-size:12px;color:var(--mut);line-height:1.1}
+.btn.ed:hover{color:var(--acc);border-color:var(--acc)}
+.orig .ov{font-size:12.5px;line-height:1.45;word-break:break-word}
+.orig .ov b{color:var(--acc);font-weight:600}
+.orig .opre{color:var(--mut)}
+
+/* chips de marcadores */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--mut);cursor:pointer}
+.chip:hover{color:var(--acc);border-color:var(--acc)}
+
+/* valores detectados */
+.sugbox{border:1px dashed var(--line);border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--panel2)}
+.sughead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sughead b{font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+#sugLista{display:flex;flex-direction:column;gap:6px;max-height:290px;overflow:auto}
+.sug{display:flex;align-items:center;gap:7px}
+.sugval{font-family:var(--mono);font-size:11.5px;color:var(--acc);background:var(--acc-soft);border-radius:5px;padding:4px 7px;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.suget{flex:1;font-size:11.5px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* lector del documento */
+#lector{max-height:430px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px;display:flex;flex-direction:column;gap:14px}
+.pag{display:flex;flex-direction:column;gap:6px}
+.pagnum{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line);padding-bottom:5px}
+.pagtx{white-space:pre-wrap;font-size:12px;line-height:1.65;cursor:text}
+.pagtx::selection,.pagtx *::selection{background:var(--acc);color:#fff}
+.mk{font-family:var(--mono);font-size:11px;color:var(--acc);background:var(--acc-soft);border-radius:4px;padding:1px 4px;cursor:pointer}
+#lectorSel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* items */
+.item{display:grid;grid-template-columns:1fr 62px 100px 30px;gap:7px;align-items:center}
+.item input[type=text]{padding:7px 8px}
+.tot{display:flex;justify-content:space-between;align-items:center;padding:9px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.tot b{font-family:var(--mono);color:var(--stamp)}
+
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--panel2);border:1px solid var(--line);
+  padding:10px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.25s;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.modal{position:fixed;inset:0;background:rgba(5,7,10,.72);display:none;align-items:center;justify-content:center;z-index:70;padding:20px}
+.modal.on{display:flex}
+.modal .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(380px,100%);
+  display:flex;flex-direction:column;gap:12px;box-shadow:0 30px 70px rgba(0,0,0,.6)}
+.modal .card h3{margin:0;font-size:14px;font-weight:600}
+
+/* zoom */
+.zoom{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mut)}
+
+/* ---------- la hoja ---------- */
+.wrap{width:816px;max-width:100%}
+.hoja{
+  width:816px;min-height:1056px;background:#fff;color:#15181d;padding:64px 68px 72px;
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:13.4px;line-height:1.62;
+  box-shadow:0 24px 60px rgba(0,0,0,.55);transform-origin:top left}
+.hoja .enc{display:flex;justify-content:space-between;gap:30px;align-items:flex-start;border-bottom:2px solid #15181d;padding-bottom:14px}
+.hoja .emisor{max-width:58%}
+.hoja .emisor img{max-height:56px;max-width:190px;display:block;margin-bottom:9px}
+.hoja .emisor .nom{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.hoja .emisor .det{font-size:11.5px;color:#4b5361;line-height:1.5;margin-top:3px}
+.hoja .meta{text-align:right;flex-shrink:0}
+.hoja .meta .tit{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;line-height:1.35;max-width:230px;margin-left:auto}
+.hoja .meta .num{font-family:var(--mono);font-size:11px;color:#4b5361;margin-top:7px;border:1px solid #c9ced8;border-radius:4px;padding:3px 8px;display:inline-block}
+.hoja .meta .fec{font-family:var(--mono);font-size:11px;color:#4b5361;margin-top:5px}
+
+.hoja .datos{display:grid;grid-template-columns:1fr 1fr;gap:2px 26px;margin:22px 0 4px}
+.hoja .datos.una{grid-template-columns:1fr}
+.hoja .dato{display:flex;gap:8px;padding:4.5px 0;border-bottom:1px dotted #d3d8e0;font-size:12.6px}
+.hoja .dato .k{color:#5a626f;flex-shrink:0;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px;min-width:34%}
+.hoja .dato .v{font-weight:600}
+
+.hoja .cuerpo{margin:22px 0;white-space:pre-wrap;text-align:justify;hyphens:auto}
+.hoja .cuerpo .miss{background:#ffe9a8;border-bottom:1px solid #d9a908;padding:0 2px;font-family:var(--mono);font-size:.86em}
+
+.hoja table{width:100%;border-collapse:collapse;margin:18px 0 4px;font-size:12.4px}
+.hoja th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#5a626f;border-bottom:1.5px solid #15181d;padding:0 0 6px}
+.hoja td{padding:7px 0;border-bottom:1px solid #e4e8ee;vertical-align:top}
+.hoja .num-c{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hoja tr{page-break-inside:avoid}
+.hoja .totrow td{border:0;padding-top:11px;font-weight:700;font-size:14px}
+.hoja .letras{font-size:11.5px;color:#4b5361;text-transform:uppercase;letter-spacing:.03em;border-top:1px solid #e4e8ee;padding-top:8px;margin-top:2px}
+
+.hoja .firma{margin-top:64px;page-break-inside:avoid}
+.hoja .firma .linea{width:250px;border-top:1px solid #15181d;padding-top:6px;font-size:12.5px}
+.hoja .firma .cargo{font-size:11.5px;color:#4b5361}
+.hoja .pie{margin-top:38px;border-top:1px solid #e4e8ee;padding-top:9px;font-size:10.5px;color:#77808f;text-align:center;letter-spacing:.02em}
+
+/* ---------- hidden que sí oculta ----------
+   .mini, .sugbox y .app declaran display, y eso vencía al atributo hidden */
+[hidden]{display:none!important}
+
+/* ---------- pantalla de inicio ---------- */
+#inicio{padding:40px 20px 70px;display:flex;justify-content:center;overflow-y:auto}
+.inicio-caja{width:min(580px,100%);display:flex;flex-direction:column;gap:24px}
+.inicio-tit{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:0;line-height:1.25}
+.inicio-sub{font-size:13.5px;color:var(--mut);line-height:1.6;margin:7px 0 0}
+.suelta{border:2px dashed var(--line);border-radius:14px;padding:32px 22px;text-align:center;
+  display:flex;flex-direction:column;gap:13px;align-items:center;background:var(--panel);transition:.15s}
+.suelta.hot{border-color:var(--acc);background:var(--acc-soft)}
+.suelta .big{font-size:15px;font-weight:600}
+.pasos{display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--mut)}
+.paso{display:flex;gap:11px;align-items:flex-start;line-height:1.55}
+.paso b{display:flex;align-items:center;justify-content:center;width:21px;height:21px;flex-shrink:0;
+  border-radius:50%;background:var(--acc-soft);color:var(--acc);font-size:11px;font-family:var(--mono);margin-top:1px}
+.proys{display:flex;flex-direction:column;gap:8px}
+.proy{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.proy .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+.proy .de{font-size:10.5px;color:var(--mut);font-family:var(--mono);white-space:nowrap}
+.rotulo{font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--mut);margin-bottom:10px}
+
+/* ---------- vista previa calcada ---------- */
+#calcado{width:100%;display:flex;flex-direction:column;align-items:center;gap:22px}
+#calcado canvas{display:block;width:100%;height:auto;background:#fff;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+.calcnota{font-size:11.5px;color:var(--mut);font-family:var(--mono);letter-spacing:.03em;text-align:center;line-height:1.6}
+
+/* ---------- impresión ---------- */
+@page{size:letter;margin:14mm 0 12mm}
+@media print{
+  html,body{background:#fff;height:auto}
+  .topbar,.panel,.noprint{display:none!important}
+  .app{display:block;height:auto}
+  .lienzo{padding:0;background:#fff;display:block;overflow:visible}
+  .wrap{width:auto}
+  .hoja{width:auto;min-height:0;box-shadow:none;transform:none!important;padding:0 16mm}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><b>Papelería</b><span>documentos · Colombia</span></div>
+  <div class="grow"></div>
+  <div class="zoom noprint">
+    <span>zoom</span>
+    <input type="range" id="zoom" min="40" max="110" value="100" style="width:90px">
+    <span id="zoomv">100%</span>
+  </div>
+  <button class="btn sm" id="btnInicio" hidden>← Inicio</button>
+  <button class="btn sm" id="btnGuardarProy" hidden>Guardar proyecto</button>
+  <button class="btn sm" id="btnHtml">Descargar HTML</button>
+  <button class="btn pri sm" id="btnPdf">Descargar PDF</button>
+  <button class="btn sm" id="btnAvanzado" hidden title="Mostrar u ocultar las secciones que no afectan la salida">avanzado</button>
+</div>
+
+<!-- ================= INICIO ================= -->
+<div id="inicio" class="noprint">
+  <div class="inicio-caja">
+    <div>
+      <h1 class="inicio-tit">Cambia los datos de un PDF sin tocarle el diseño</h1>
+      <p class="inicio-sub">Subes tu PDF, marcas los datos que cambian, escribes los nuevos y lo exportas idéntico al original.</p>
+    </div>
+
+    <div class="suelta" id="suelta">
+      <div class="big">Arrastra aquí tu PDF</div>
+      <button class="btn pri" id="btnInicioPdf">Subir PDF</button>
+      <div class="hint">Tiene que ser un PDF con texto de verdad, no una foto ni un escaneo.</div>
+    </div>
+
+    <div class="pasos">
+      <div class="paso"><b>1</b><span>Subes el PDF. La app lee el texto y te propone sola los datos que suelen cambiar.</span></div>
+      <div class="paso"><b>2</b><span>Escribes los valores nuevos. Si falta alguno, tocas la palabra en el texto y la vuelves campo.</span></div>
+      <div class="paso"><b>3</b><span>Exportas. Se abre la ventana de impresión y eliges <b>Guardar como PDF</b>.</span></div>
+    </div>
+
+    <div>
+      <div class="rotulo">Mis proyectos</div>
+      <div class="proys" id="proys"></div>
+      <div class="btnrow" style="margin-top:9px">
+        <button class="btn sm" id="btnAbrirArch">Abrir proyecto desde archivo</button>
+        <button class="btn sm" id="btnSeguir" hidden>↩ Seguir con lo que estaba haciendo</button>
+      </div>
+      <input type="file" id="fileProyJson" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="btnrow">
+      <button class="btn sm" id="btnModoLibre">Prefiero armar un documento desde cero</button>
+    </div>
+    <input type="file" id="fileProy" accept=".pdf,application/pdf" hidden>
+  </div>
+</div>
+
+<div class="app" id="app">
+<!-- ================= PANEL ================= -->
+<div class="panel">
+
+  <details class="sec" open id="secPlantilla">
+    <summary><h2>Plantilla</h2></summary>
+    <div class="body">
+      <label class="f"><span>Tipo de documento</span>
+        <select id="preset">
+          <option value="cotizacion">Cotización</option>
+          <option value="remision">Orden de despacho COD / remisión</option>
+          <option value="cuenta">Cuenta de cobro por entregables</option>
+          <option value="constancia">Constancia de prestación de servicios</option>
+          <option value="contrato">Contrato de prestación de servicios</option>
+          <option value="blanco">En blanco</option>
+        </select>
+      </label>
+      <div class="hint">Cargar una plantilla reemplaza los campos y el cuerpo. Los datos del emisor se conservan.</div>
+      <div class="btnrow">
+        <button class="btn sm" id="btnCargarPreset">Cargar plantilla</button>
+        <button class="btn sm" id="btnGuardar">Guardar la mía</button>
+        <button class="btn sm" id="btnJsonOut">Exportar .json</button>
+        <button class="btn sm" id="btnJsonIn">Importar .json</button>
+      </div>
+      <label class="f" id="wrapMisPlantillas"><span>Mis plantillas guardadas</span>
+        <div style="display:flex;gap:8px">
+          <select id="misPlantillas" style="flex:1"></select>
+          <button class="btn sm" id="btnCargarMia">Cargar</button>
+          <button class="btn sm icon" id="btnBorrarMia" title="Eliminar">✕</button>
+        </div>
+      </label>
+      <input type="file" id="fileJson" accept="application/json" hidden>
+    </div>
+  </details>
+
+  <details class="sec" open id="secImportar">
+    <summary><h2>Mi plantilla</h2></summary>
+    <div class="body">
+      <div class="hint" id="hintPegar">Pega el texto de tu propio documento —de Word, de Notas, de donde lo tengas— y conviértelo en plantilla. Luego marcas qué partes cambian en cada salida.</div>
+      <textarea id="imp_texto" placeholder="Pega aquí el texto de tu documento…"></textarea>
+      <div class="btnrow" id="rowImportar">
+        <button class="btn pri sm" id="btnUsarTexto">Usar como plantilla</button>
+        <button class="btn sm" id="btnSubirTxt">Subir .txt</button>
+        <button class="btn sm" id="btnSubirPdf">Subir PDF</button>
+      </div>
+      <input type="file" id="fileTxt" accept=".txt,.md,text/plain" hidden>
+      <input type="file" id="filePdf" accept=".pdf,application/pdf" hidden>
+      <div class="hint" id="hintMarcadores">Si el texto ya trae marcadores <code style="font-family:var(--mono);color:var(--acc)">{{así}}</code>, los campos se crean solos.</div>
+      <div class="sugbox" id="sugBox" hidden>
+        <div class="sughead">
+          <b>Valores detectados</b>
+          <div class="btnrow">
+            <button class="btn sm" id="btnSugTodos">Agregar todos</button>
+            <button class="btn sm icon" id="btnSugCerrar" title="Ocultar">✕</button>
+          </div>
+        </div>
+        <div class="hint">Estos son los datos que cambian en cada documento. Toca <b>+ campo</b> en los que quieras: se reemplazan por un marcador y quedan listos para llenar.</div>
+        <div id="sugLista"></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="sec" id="secEmisor">
+    <summary><h2>Emisor</h2></summary>
+    <div class="body">
+      <label class="f"><span>Nombre o razón social</span><input type="text" id="e_nombre" placeholder="Tu negocio"></label>
+      <div class="row2">
+        <label class="f"><span>NIT o cédula</span><input type="text" id="e_nit"></label>
+        <label class="f"><span>Teléfono</span><input type="text" id="e_telefono"></label>
+      </div>
+      <div class="row2">
+        <label class="f"><span>Ciudad</span><input type="text" id="e_ciudad" placeholder="Medellín"></label>
+        <label class="f"><span>Correo</span><input type="text" id="e_correo"></label>
+      </div>
+      <label class="f"><span>Dirección</span><input type="text" id="e_direccion"></label>
+      <label class="f"><span>Logo (opcional)</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="file" id="e_logo" accept="image/*" style="flex:1;font-size:12px">
+          <button class="btn sm icon" id="btnQuitarLogo" title="Quitar logo">✕</button>
+        </div>
+      </label>
+      <label class="f"><span>Texto del pie de página</span><input type="text" id="e_pie" placeholder="Documento generado electrónicamente"></label>
+    </div>
+  </details>
+
+  <details class="sec" open id="secEncabezado">
+    <summary><h2>Encabezado</h2></summary>
+    <div class="body">
+      <label class="f"><span>Título del documento</span><input type="text" id="d_titulo"></label>
+      <div class="row2">
+        <label class="f"><span>Consecutivo</span><input type="text" id="d_consecutivo" placeholder="COT-0001"></label>
+        <label class="f"><span>Fecha</span><input type="date" id="d_fecha"></label>
+      </div>
+    </div>
+  </details>
+
+  <details class="sec" open id="secLector">
+    <summary><h2>Texto del documento</h2></summary>
+    <div class="body">
+      <div class="hint">Toca una palabra —o arrastra para tomar varias— y conviértela en campo. El cuadro para escribir el texto nuevo aparece abajo, en <b>Campos</b>. Si el dato se repite, un solo campo lo cambia en todas las páginas.</div>
+      <div class="btnrow">
+        <button class="btn pri sm" id="btnHacerCampo" disabled>Hacer campo</button>
+        <select id="selCampoExist" style="max-width:180px;flex:1;min-width:0;padding:6px 8px;font-size:12px"></select>
+        <button class="btn sm" id="btnUsarCampo" disabled>Usar aquí</button>
+      </div>
+      <div class="btnrow" id="rowSolo" hidden>
+        <button class="btn sm tog" id="btnSolo" aria-pressed="false" title="Prendido: cambia solo la que marcaste. Apagado: cambia todas las iguales."><span class="pt"></span>Solo esta aparición</button>
+      </div>
+      <div class="hint" id="hintSolo" hidden></div>
+      <label class="mini" id="wrapSolo" hidden><input type="checkbox" id="soloAqui"> Cambiar solo esta aparición, no todas</label>
+      <label class="mini" id="wrapIgual" hidden><input type="checkbox" id="salidaIgual" checked> Salida idéntica al PDF original (misma hoja, mismos espacios)</label>
+      <span class="hint" id="lectorSel">Nada seleccionado</span>
+      <div id="lector"></div>
+      <div class="hint" id="lectorInfo"></div>
+    </div>
+  </details>
+
+  <details class="sec" open id="secCampos">
+    <summary><h2>Campos</h2></summary>
+    <div class="body">
+      <div class="hint" id="hintCampos">Cada campo genera un marcador. Toca el marcador para copiarlo al cuerpo del documento.</div>
+      <div id="campos" style="display:flex;flex-direction:column;gap:9px"></div>
+      <button class="btn sm" id="btnAddCampo">+ Agregar campo</button>
+    </div>
+  </details>
+
+  <details class="sec" open id="secCuerpo">
+    <summary><h2>Cuerpo</h2></summary>
+    <div class="body">
+      <div class="hint">Escribe el texto fijo y usa <code style="font-family:var(--mono);color:var(--acc)">{{marcador}}</code> donde deba entrar cada dato.</div>
+      <div class="btnrow"><button class="btn sm" id="btnSelCampo">Convertir lo seleccionado en campo</button></div>
+      <div class="chips" id="chips"></div>
+      <textarea id="d_cuerpo" placeholder="Cuerpo del documento…"></textarea>
+    </div>
+  </details>
+
+  <details class="sec" id="secItems">
+    <summary><h2>Tabla de ítems</h2></summary>
+    <div class="body">
+      <label class="mini"><input type="checkbox" id="it_on"> Incluir tabla en el documento</label>
+      <div id="itemsBox" style="display:flex;flex-direction:column;gap:9px">
+        <div class="row2">
+          <label class="f"><span>Encabezado de la columna</span><input type="text" id="it_col" placeholder="Descripción"></label>
+          <label class="f"><span>Etiqueta del total</span><input type="text" id="it_lbl" placeholder="Total a pagar"></label>
+        </div>
+        <div id="items" style="display:flex;flex-direction:column;gap:7px"></div>
+        <div class="btnrow">
+          <button class="btn sm" id="btnAddItem">+ Agregar fila</button>
+          <label class="mini"><input type="checkbox" id="it_letras"> Mostrar total en letras</label>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="sec" id="secFirma">
+    <summary><h2>Firma</h2></summary>
+    <div class="body">
+      <label class="mini"><input type="checkbox" id="fi_on" checked> Incluir bloque de firma</label>
+      <label class="f"><span>Nombre de quien firma</span><input type="text" id="fi_nombre"></label>
+      <div class="row2">
+        <label class="f"><span>Cargo</span><input type="text" id="fi_cargo"></label>
+        <label class="f"><span>Documento</span><input type="text" id="fi_doc" placeholder="C.C. 1.000.000.000"></label>
+      </div>
+    </div>
+  </details>
+
+</div>
+
+<!-- ================= LIENZO ================= -->
+<div class="lienzo">
+  <div class="wrap" id="wrapHoja"><div class="hoja" id="hoja"></div></div>
+  <div id="calcado" hidden></div>
+</div>
+</div>
+
+<div class="modal" id="modal"><div class="card">
+  <h3 id="mTitulo"></h3>
+  <input type="text" id="mInput">
+  <div class="btnrow" style="justify-content:flex-end">
+    <button class="btn sm" id="mCancel">Cancelar</button>
+    <button class="btn pri sm" id="mOk">Aceptar</button>
+  </div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ utilidades ============ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cop = n => new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(n||0);
+const soloNum = s => { const d = String(s??"").replace(/[^\d]/g,""); return d?parseInt(d,10):0; };
+const slug = s => String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+  .replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,28) || "campo";
+const uid = () => Math.random().toString(36).slice(2,9);
+let tt; const toast = m => { const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("on"),2200); };
+
+const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+function fechaCorta(iso){ if(!iso) return ""; const [a,m,d]=iso.split("-"); return `${d}/${m}/${a}`; }
+function fechaLarga(iso){ if(!iso) return ""; const [a,m,d]=iso.split("-"); return `${parseInt(d,10)} de ${MESES[parseInt(m,10)-1]} de ${a}`; }
+
+/* número a letras (pesos colombianos) */
+const UNI=["","uno","dos","tres","cuatro","cinco","seis","siete","ocho","nueve","diez","once","doce","trece","catorce","quince","dieciséis","diecisiete","dieciocho","diecinueve","veinte","veintiuno","veintidós","veintitrés","veinticuatro","veinticinco","veintiséis","veintisiete","veintiocho","veintinueve"];
+const DEC=["","","","treinta","cuarenta","cincuenta","sesenta","setenta","ochenta","noventa"];
+const CEN=["","ciento","doscientos","trescientos","cuatrocientos","quinientos","seiscientos","setecientos","ochocientos","novecientos"];
+function menor1000(n){
+  if(n===0) return "";
+  if(n===100) return "cien";
+  let t="";
+  const c=Math.floor(n/100), r=n%100;
+  if(c) t=CEN[c];
+  if(r){ if(t) t+=" ";
+    if(r<30) t+=UNI[r];
+    else { const d=Math.floor(r/10), u=r%10; t+=DEC[d]+(u?" y "+UNI[u]:""); }
+  }
+  return t;
+}
+function enLetras(n){
+  n=Math.floor(Math.abs(n||0));
+  if(n===0) return "cero pesos m/cte";
+  let out="";
+  const mill=Math.floor(n/1000000), resto=n%1000000, miles=Math.floor(resto/1000), uni=resto%1000;
+  if(mill) out += (mill===1?"un millón":menor1000(mill)+" millones");
+  if(miles){ out += (out?" ":"") + (miles===1?"mil":menor1000(miles)+" mil"); }
+  if(uni){ out += (out?" ":"") + menor1000(uni); }
+  out = out.trim().replace(/veintiuno$/,"veintiún").replace(/uno$/,"un");
+  const de = (mill>0 && resto===0) ? "de " : "";
+  return `${out} ${de}${n===1?"peso":"pesos"} m/cte`;
+}
+
+/* ============ estado ============ */
+const hoy = new Date().toISOString().slice(0,10);
+let S = {
+  emisor:{nombre:"",nit:"",telefono:"",ciudad:"",correo:"",direccion:"",logo:"",pie:""},
+  doc:{titulo:"",consecutivo:"",fecha:hoy,cuerpo:""},
+  campos:[],
+  items:{on:false,col:"Descripción",lbl:"Total",letras:false,filas:[]},
+  firma:{on:true,nombre:"",cargo:"",doc:""}
+};
+
+/* ============ plantillas base ============ */
+const c=(e,v="",b=true)=>({id:uid(),etiqueta:e,clave:slug(e),valor:v,bloque:b});
+const PRESETS={
+  cotizacion:{
+    titulo:"Cotización", consecutivo:"COT-0001",
+    campos:[c("Cliente"),c("NIT o cédula"),c("Ciudad"),c("Teléfono"),c("Validez de la oferta","15 días"),c("Forma de pago","Contra entrega")],
+    cuerpo:"Estimado(a) {{cliente}}:\n\nAgradecemos su interés. A continuación relacionamos los productos solicitados con sus valores unitarios.\n\nEsta cotización tiene una validez de {{validez_de_la_oferta}} a partir de la fecha de expedición. Forma de pago: {{forma_de_pago}}. Los valores incluyen el envío dentro del perímetro urbano.",
+    items:{on:true,col:"Producto",lbl:"Total cotizado",letras:false,filas:[{d:"",c:1,v:0}]},
+    firma:{on:true,cargo:"Asesor comercial"}
+  },
+  remision:{
+    titulo:"Orden de despacho — pago contra entrega", consecutivo:"COD-0001",
+    campos:[c("Número de pedido"),c("Cliente"),c("Cédula"),c("Teléfono"),c("Dirección de entrega"),c("Ciudad y barrio"),c("Transportadora"),c("Observaciones","Confirmar por WhatsApp antes de salir a ruta",false)],
+    cuerpo:"Se despacha el siguiente pedido bajo la modalidad de pago contra entrega. El mensajero recauda el valor total al momento de la entrega y entrega este comprobante al cliente.\n\nObservaciones: {{observaciones}}",
+    items:{on:true,col:"Producto despachado",lbl:"Valor a recaudar",letras:true,filas:[{d:"",c:1,v:0}]},
+    firma:{on:true,cargo:"Responsable de despacho"}
+  },
+  cuenta:{
+    titulo:"Cuenta de cobro", consecutivo:"CC-0001",
+    campos:[c("Contratante"),c("NIT del contratante"),c("Nombre de quien cobra"),c("Cédula"),c("Periodo cobrado"),c("Concepto","Entregables de contenido"),c("Datos para el pago","Bancolombia ahorros No. 000-000000-00")],
+    cuerpo:"{{contratante}}, identificado con NIT {{nit_del_contratante}},\n\nDEBE A: {{nombre_de_quien_cobra}}, identificado(a) con cédula de ciudadanía No. {{cedula}},\n\nPor concepto de {{concepto}} entregados durante el periodo {{periodo_cobrado}}, según el detalle que se relaciona a continuación.\n\nFavor consignar a: {{datos_para_el_pago}}.",
+    items:{on:true,col:"Entregable",lbl:"Total a pagar",letras:true,filas:[{d:"Entregable — producto",c:1,v:30000}]},
+    firma:{on:true,cargo:"Contratista"}
+  },
+  constancia:{
+    titulo:"Constancia de prestación de servicios", consecutivo:"",
+    campos:[c("Nombre"),c("Cédula"),c("Fecha de inicio"),c("Actividades contratadas"),c("Modalidad","Contrato de prestación de servicios")],
+    cuerpo:"HACE CONSTAR:\n\nQue {{nombre}}, identificado(a) con cédula de ciudadanía No. {{cedula}}, presta sus servicios de manera independiente y autónoma desde el {{fecha_de_inicio}}, bajo la modalidad de {{modalidad}}, desarrollando las siguientes actividades: {{actividades_contratadas}}.\n\nEntre las partes no existe relación laboral, subordinación ni exclusividad. El contratista asume por su cuenta los aportes al sistema de seguridad social.\n\nLa presente constancia se expide a solicitud del interesado.",
+    items:{on:false},
+    firma:{on:true,cargo:"Representante legal"}
+  },
+  contrato:{
+    titulo:"Contrato de prestación de servicios", consecutivo:"CPS-0001",
+    campos:[c("Contratante"),c("NIT o cédula del contratante"),c("Contratista"),c("Cédula del contratista"),c("Objeto del contrato","Producción de contenido: plantillas gráficas, locuciones y edición de video"),c("Valor por entregable","$30.000"),c("Periodicidad de pago","Semanal"),c("Duración","Tres (3) meses prorrogables")],
+    cuerpo:"Entre {{contratante}}, identificado con {{nit_o_cedula_del_contratante}}, quien en adelante se denominará EL CONTRATANTE, y {{contratista}}, identificado(a) con cédula de ciudadanía No. {{cedula_del_contratista}}, quien en adelante se denominará EL CONTRATISTA, se celebra el presente contrato de prestación de servicios, regido por las siguientes cláusulas:\n\nPRIMERA — OBJETO. EL CONTRATISTA se obliga a ejecutar, con plena autonomía técnica y administrativa, las siguientes actividades: {{objeto_del_contrato}}.\n\nSEGUNDA — AUTONOMÍA. Las partes declaran que no existe subordinación, horario impuesto, exclusividad ni relación laboral alguna. EL CONTRATISTA ejecuta el objeto con sus propios medios y organiza su tiempo libremente, respondiendo únicamente por los resultados pactados.\n\nTERCERA — VALOR Y FORMA DE PAGO. EL CONTRATANTE reconocerá {{valor_por_entregable}} por cada entregable recibido a satisfacción, con pagos de periodicidad {{periodicidad_de_pago}}, previa relación de los entregables del periodo.\n\nCUARTA — DURACIÓN. El presente contrato tendrá una duración de {{duracion}}, contada a partir de su firma.\n\nQUINTA — OBLIGACIONES DEL CONTRATISTA. Entregar el trabajo en los términos y calidades acordados, mantener informado al contratante sobre el avance, y asumir por su cuenta los aportes al Sistema de Seguridad Social en Salud y Pensión conforme a la ley.\n\nSEXTA — CONFIDENCIALIDAD Y PROPIEDAD INTELECTUAL. EL CONTRATISTA se obliga a mantener reserva sobre la información comercial, listas de proveedores, estrategias y material al que acceda con ocasión del contrato, obligación que subsiste tras su terminación. Los derechos patrimoniales sobre el material producido se entienden cedidos a EL CONTRATANTE desde su entrega y pago.\n\nSÉPTIMA — TERMINACIÓN. Cualquiera de las partes podrá terminar el contrato mediante aviso escrito con quince (15) días de antelación, liquidando los entregables recibidos hasta esa fecha.\n\nEn constancia se firma por las partes.",
+    items:{on:false},
+    firma:{on:true,cargo:"El contratante"}
+  },
+  blanco:{ titulo:"", consecutivo:"", campos:[c("Nombre"),c("Documento")], cuerpo:"", items:{on:false}, firma:{on:true,cargo:""} }
+};
+
+function cargarPreset(id){
+  const p = PRESETS[id]; if(!p) return;
+  S.doc.titulo=p.titulo; S.doc.consecutivo=p.consecutivo; S.doc.cuerpo=p.cuerpo;
+  S.campos = p.campos.map(x=>({...x,id:uid()}));
+  S.items = p.items.on
+    ? {on:true,col:p.items.col,lbl:p.items.lbl,letras:!!p.items.letras,filas:(p.items.filas||[]).map(f=>({id:uid(),...f}))}
+    : {on:false,col:"Descripción",lbl:"Total",letras:false,filas:[]};
+  S.firma = {on:p.firma.on, nombre:S.firma.nombre, cargo:p.firma.cargo||"", doc:S.firma.doc||""};
+  SUG=[]; renderSug(); PAGS=null; soltarPdf();
+  pintarTodo();
+  toast("Plantilla cargada");
+}
+
+/* ============ diccionario de marcadores ============ */
+function total(){ return S.items.filas.reduce((a,f)=>a+(soloNum(f.c)||0)*(soloNum(f.v)||0),0); }
+function dicc(){
+  const d={};
+  S.campos.forEach(f=>{ d[f.clave]=f.valor; });
+  Object.assign(d,{
+    empresa:S.emisor.nombre, nit:S.emisor.nit, telefono:S.emisor.telefono, correo:S.emisor.correo,
+    direccion:S.emisor.direccion, ciudad:S.emisor.ciudad,
+    titulo:S.doc.titulo, consecutivo:S.doc.consecutivo,
+    fecha:fechaCorta(S.doc.fecha), fecha_larga:fechaLarga(S.doc.fecha),
+    total:cop(total()), total_letras:enLetras(total()),
+    firmante:S.firma.nombre, cargo:S.firma.cargo
+  });
+  return d;
+}
+const AUTO=["empresa","nit","telefono","correo","direccion","ciudad","titulo","consecutivo","fecha","fecha_larga","total","total_letras","firmante","cargo"];
+
+function reemplazar(txt){
+  const d=dicc();
+  return esc(txt).replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi,(m,k)=>{
+    const v=d[k.toLowerCase()];
+    if(v===undefined) return `<span class="miss">{{${esc(k)}}}</span>`;
+    if(String(v).trim()==="") return `<span class="miss">${esc(k)}</span>`;
+    return esc(v);
+  });
+}
+
+/* ============ render de la hoja ============ */
+function renderHoja(){
+  const e=S.emisor, d=S.doc;
+  const enBloque=S.campos.filter(f=>f.bloque);
+  let h="";
+
+  h+=`<div class="enc"><div class="emisor">`;
+  if(e.logo) h+=`<img src="${e.logo}" alt="">`;
+  h+=`<div class="nom">${esc(e.nombre)||"&nbsp;"}</div><div class="det">`;
+  h+=[e.nit&&"NIT/C.C. "+esc(e.nit), esc(e.direccion), esc(e.ciudad), esc(e.telefono), esc(e.correo)].filter(Boolean).join(" · ");
+  h+=`</div></div><div class="meta"><div class="tit">${esc(d.titulo)}</div>`;
+  if(d.consecutivo) h+=`<div class="num">${esc(d.consecutivo)}</div>`;
+  h+=`<div class="fec">${esc(e.ciudad?e.ciudad+", ":"")}${esc(fechaLarga(d.fecha))}</div></div></div>`;
+
+  if(enBloque.length){
+    h+=`<div class="datos${enBloque.length<3?" una":""}">`;
+    enBloque.forEach(f=>{ h+=`<div class="dato"><div class="k">${esc(f.etiqueta)}</div><div class="v">${esc(f.valor)||"—"}</div></div>`; });
+    h+=`</div>`;
+  }
+
+  if(d.cuerpo.trim()) h+=`<div class="cuerpo">${reemplazar(d.cuerpo)}</div>`;
+
+  if(S.items.on && S.items.filas.length){
+    h+=`<table><thead><tr><th>${esc(S.items.col)}</th><th class="num-c">Cant.</th><th class="num-c">Vr. unitario</th><th class="num-c">Vr. total</th></tr></thead><tbody>`;
+    S.items.filas.forEach(f=>{
+      const q=soloNum(f.c), v=soloNum(f.v);
+      h+=`<tr><td>${esc(f.d)||"—"}</td><td class="num-c">${q}</td><td class="num-c">${cop(v)}</td><td class="num-c">${cop(q*v)}</td></tr>`;
+    });
+    h+=`<tr class="totrow"><td colspan="2"></td><td class="num-c">${esc(S.items.lbl)}</td><td class="num-c">${cop(total())}</td></tr>`;
+    h+=`</tbody></table>`;
+    if(S.items.letras) h+=`<div class="letras">Son: ${esc(enLetras(total()))}</div>`;
+  }
+
+  if(S.firma.on){
+    h+=`<div class="firma"><div class="linea">${esc(S.firma.nombre)||"&nbsp;"}</div>`;
+    if(S.firma.cargo) h+=`<div class="cargo">${esc(S.firma.cargo)}</div>`;
+    if(S.firma.doc) h+=`<div class="cargo">${esc(S.firma.doc)}</div>`;
+    h+=`</div>`;
+  }
+  if(e.pie) h+=`<div class="pie">${esc(e.pie)}</div>`;
+
+  $("#hoja").innerHTML=h;
+}
+
+/* ============ render de controles ============ */
+function renderCampos(){
+  const box=$("#campos"); box.innerHTML="";
+  S.campos.forEach((f,i)=>{
+    const el=document.createElement("div"); el.className="campo";
+    el.innerHTML=`
+      <div class="top">
+        <input type="text" data-k="etiqueta" value="${esc(f.etiqueta)}" placeholder="Nombre del campo">
+        <span class="clave" title="Insertar en el cuerpo">{{${esc(f.clave)}}}</span>
+        <button class="btn icon sm" data-del="1" title="Eliminar">✕</button>
+      </div>
+      <input type="text" data-k="valor" value="${esc(f.valor)}" placeholder="Valor">
+      ${cajaOrig(f)}
+      ${botonSolo(f)}
+      <label class="mini solobloque"><input type="checkbox" data-k="bloque" ${f.bloque?"checked":""}> Mostrar en el bloque de datos</label>`;
+    el.querySelector('[data-k=etiqueta]').oninput=ev=>{
+      const vieja=f.clave;
+      f.etiqueta=ev.target.value;
+      f.clave=claveLibre(slug(ev.target.value)||"campo", f);
+      /* los tramos de REEMP guardan la clave: si no se renombran también, quedan
+         huérfanos y pintarCambio tapa el dato sin escribir nada encima */
+      if(DOC && f.clave!==vieja){
+        REEMP.forEach(l=>l.forEach(r=>{ if(r.clave===vieja) r.clave=f.clave; }));
+        sincronizar();
+      }
+      el.querySelector(".clave").textContent=`{{${f.clave}}}`;
+      renderHoja(); renderChips(); renderLector(); pedirPrevia(); tocado();
+    };
+    el.querySelector('[data-k=valor]').oninput=ev=>{ f.valor=ev.target.value; renderHoja(); pedirPrevia(); tocado(); };
+    el.querySelector('[data-k=bloque]').onchange=ev=>{ f.bloque=ev.target.checked; renderHoja(); };
+    el.querySelector('[data-del]').onclick=()=>{ S.campos.splice(i,1); quitarReemplazos(f.clave); pintarTodo(); };
+    el.querySelector('.clave').onclick=()=>insertar(`{{${f.clave}}}`);
+    el.querySelectorAll('[data-solo]').forEach(b=>{
+      b.onclick=()=>{
+        const quiere=b.dataset.solo, solo=tramosDe(f.clave)<=1;
+        if((quiere==="una")===solo) return;          /* ya está activo: no hace nada */
+        if(quiere==="todas"){
+          const p=todosLosTramos(f.clave,f.orig);
+          toast(p? `Ahora cambia en ${tramosDe(f.clave)} lugares` : "No encontré más apariciones libres");
+        }else{
+          dejarUnTramo(f.clave,f.sel);
+          toast(f.sel? "Ahora cambia solo la que seleccionaste" : "Ahora cambia solo la primera");
+        }
+        sincronizar(); pintarTodo(); pedirPrevia(); tocado();
+      };
+    });
+    const lap=el.querySelector('[data-ed]');
+    if(lap) lap.onclick=async()=>{
+      const v=await askText("¿Cuál es el dato que cambia?", datoDe(f));
+      if(v===null) return;
+      const t=String(v).trim();
+      if(!t){ toast("Escribe cuál es el dato que cambia"); return; }
+      if(!f.orig.includes(t)){ toast("Ese texto no está dentro de lo que capturaste"); return; }
+      f.dato=t; renderCampos(); tocado();
+      toast("Listo: ahora el dato es “"+(t.length>30?t.slice(0,30)+"…":t)+"”");
+    };
+    box.appendChild(el);
+  });
+  if(typeof aplicarModo==="function") aplicarModo();
+}
+function renderChips(){
+  const box=$("#chips"); box.innerHTML="";
+  [...S.campos.map(f=>f.clave), ...AUTO].forEach(k=>{
+    const b=document.createElement("span"); b.className="chip"; b.textContent="{{"+k+"}}";
+    b.onclick=()=>insertar("{{"+k+"}}");
+    box.appendChild(b);
+  });
+}
+function insertar(txt){
+  const ta=$("#d_cuerpo"), p=ta.selectionStart??ta.value.length;
+  ta.value=ta.value.slice(0,p)+txt+ta.value.slice(ta.selectionEnd??p);
+  ta.focus(); ta.selectionStart=ta.selectionEnd=p+txt.length;
+  S.doc.cuerpo=ta.value; PAGS=null; soltarPdf(); renderLector(); renderHoja();
+}
+function renderItems(){
+  const box=$("#items"); box.innerHTML="";
+  S.items.filas.forEach((f,i)=>{
+    const el=document.createElement("div"); el.className="item";
+    el.innerHTML=`<input type="text" value="${esc(f.d)}" placeholder="Descripción">
+      <input type="text" value="${esc(f.c)}" placeholder="Cant.">
+      <input type="text" value="${esc(f.v)}" placeholder="Valor">
+      <button class="btn icon sm">✕</button>`;
+    const ins=el.querySelectorAll("input");
+    ins[0].oninput=e=>{f.d=e.target.value;renderHoja();};
+    ins[1].oninput=e=>{f.c=e.target.value;renderHoja();};
+    ins[2].oninput=e=>{f.v=e.target.value;renderHoja();};
+    el.querySelector("button").onclick=()=>{S.items.filas.splice(i,1);renderItems();renderHoja();};
+    box.appendChild(el);
+  });
+  $("#itemsBox").style.opacity=S.items.on?1:.45;
+}
+function pintarTodo(){
+  $("#e_nombre").value=S.emisor.nombre; $("#e_nit").value=S.emisor.nit;
+  $("#e_telefono").value=S.emisor.telefono; $("#e_ciudad").value=S.emisor.ciudad;
+  $("#e_correo").value=S.emisor.correo; $("#e_direccion").value=S.emisor.direccion; $("#e_pie").value=S.emisor.pie;
+  $("#d_titulo").value=S.doc.titulo; $("#d_consecutivo").value=S.doc.consecutivo;
+  $("#d_fecha").value=S.doc.fecha; $("#d_cuerpo").value=S.doc.cuerpo;
+  $("#it_on").checked=S.items.on; $("#it_col").value=S.items.col; $("#it_lbl").value=S.items.lbl; $("#it_letras").checked=S.items.letras;
+  $("#fi_on").checked=S.firma.on; $("#fi_nombre").value=S.firma.nombre; $("#fi_cargo").value=S.firma.cargo; $("#fi_doc").value=S.firma.doc;
+  renderCampos(); renderChips(); renderItems(); renderLector(); renderHoja();
+  aplicarModo(); pedirPrevia(); tocado();
+}
+
+/* ============ enlaces de controles ============ */
+const bind=(sel,fn)=>{ const el=$(sel); el.addEventListener(el.type==="checkbox"?"change":"input",e=>{ fn(e.target.type==="checkbox"?e.target.checked:e.target.value); renderHoja(); }); };
+bind("#e_nombre",v=>S.emisor.nombre=v); bind("#e_nit",v=>S.emisor.nit=v);
+bind("#e_telefono",v=>S.emisor.telefono=v); bind("#e_ciudad",v=>S.emisor.ciudad=v);
+bind("#e_correo",v=>S.emisor.correo=v); bind("#e_direccion",v=>S.emisor.direccion=v);
+bind("#e_pie",v=>S.emisor.pie=v);
+bind("#d_titulo",v=>S.doc.titulo=v); bind("#d_consecutivo",v=>S.doc.consecutivo=v); bind("#d_fecha",v=>S.doc.fecha=v);
+bind("#d_cuerpo",v=>{ S.doc.cuerpo=v; PAGS=null; soltarPdf(); renderLector(); });
+bind("#it_col",v=>S.items.col=v); bind("#it_lbl",v=>S.items.lbl=v);
+bind("#it_letras",v=>S.items.letras=v);
+bind("#fi_nombre",v=>S.firma.nombre=v); bind("#fi_cargo",v=>S.firma.cargo=v); bind("#fi_doc",v=>S.firma.doc=v);
+bind("#fi_on",v=>S.firma.on=v);
+$("#it_on").addEventListener("change",e=>{ S.items.on=e.target.checked; if(S.items.on&&!S.items.filas.length) S.items.filas.push({id:uid(),d:"",c:1,v:0}); renderItems(); renderHoja(); });
+$("#btnAddCampo").onclick=()=>{ S.campos.push(c("Campo nuevo")); renderCampos(); renderChips(); renderHoja(); };
+$("#btnAddItem").onclick=()=>{ S.items.filas.push({id:uid(),d:"",c:1,v:0}); renderItems(); renderHoja(); };
+$("#btnCargarPreset").onclick=()=>cargarPreset($("#preset").value);
+$("#e_logo").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>{ S.emisor.logo=r.result; renderHoja(); }; r.readAsDataURL(f);
+});
+$("#btnQuitarLogo").onclick=()=>{ S.emisor.logo=""; $("#e_logo").value=""; renderHoja(); };
+
+/* zoom */
+const zoom=v=>{ $("#hoja").style.transform=`scale(${v/100})`; $("#hoja").style.marginBottom=`${(v/100-1)*1056}px`;
+  document.querySelector(".wrap").style.width=(816*v/100)+"px"; $("#zoomv").textContent=v+"%"; zoomCalcado(v); };
+$("#zoom").addEventListener("input",e=>zoom(+e.target.value));
+function ajustar(){ const w=document.querySelector(".lienzo").clientWidth-44; const v=Math.max(40,Math.min(100,Math.floor(w/816*100))); $("#zoom").value=v; zoom(v); }
+window.addEventListener("resize",ajustar);
+
+/* ============ exportar ============ */
+function docHTML(){
+  const css=[...document.querySelectorAll("style")].map(s=>s.textContent).join("\n");
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>${esc(S.doc.titulo||"Documento")}</title>
+<style>${css}
+body{background:#fff;margin:0}.hoja{box-shadow:none;margin:0 auto;transform:none}
+@media print{.hoja{padding:0 16mm}}</style></head>
+<body><div class="hoja">${$("#hoja").innerHTML}</div></body></html>`;
+}
+function bajar(nombre,contenido,tipo){
+  const b=new Blob([contenido],{type:tipo}), u=URL.createObjectURL(b);
+  const a=document.createElement("a"); a.href=u; a.download=nombre; a.click();
+  setTimeout(()=>URL.revokeObjectURL(u),3000);
+}
+/* ---- salida calcada del PDF original ---- */
+function colorEn(cx,x,y){
+  try{ const d=cx.getImageData(Math.max(0,Math.round(x)),Math.max(0,Math.round(y)),1,1).data; return [d[0],d[1],d[2]]; }
+  catch(_){ return [255,255,255]; }
+}
+function fondoDe(cx,r){
+  const pts=[[r.x-4,r.y+r.h/2],[r.x+r.w+4,r.y+r.h/2],[r.x+r.w/2,r.y-3],[r.x+r.w/2,r.y+r.h+3]];
+  const cuenta={};
+  pts.forEach(([x,y])=>{ const k=colorEn(cx,x,y).join(","); cuenta[k]=(cuenta[k]||0)+1; });
+  let mejor="255,255,255", max=0;
+  for(const k in cuenta) if(cuenta[k]>max){ max=cuenta[k]; mejor=k; }
+  return "rgb("+mejor+")";
+}
+function tintaDe(cx,r){
+  let mejor=[0,0,0], lum=1e9;
+  const px=Math.max(1,Math.floor(r.w/14)), py=Math.max(1,Math.floor(r.h/6));
+  for(let x=r.x;x<r.x+r.w;x+=px) for(let y=r.y;y<r.y+r.h;y+=py){
+    const c=colorEn(cx,x,y), l=c[0]*.3+c[1]*.6+c[2]*.1;
+    if(l<lum){ lum=l; mejor=c; }
+  }
+  return lum<200? "rgb("+mejor.join(",")+")" : "#000";
+}
+/* Ajusta un borde del recuadro al hueco en blanco REAL que se ve en la página.
+   Solo actúa cuando el dato linda con un espacio: entonces su borde tiene que
+   caer en un hueco, y se busca el más cercano a la estimación. Con eso el
+   desfase por medir con una fuente distinta a la del PDF deja de importar.
+   Devuelve null si no hay espacio al lado o si ningún hueco queda cerca. */
+function xAjustado(cx,vp,it,idx,lado,xEst,alto){
+  const s=it.str;
+  if(lado==="ini"){ if(!(idx>0 && s[idx-1]===" ")) return null; }
+  else            { if(!(idx<s.length && s[idx]===" ")) return null; }
+  const pa=vp.convertToViewportPoint(it.x, it.y+alto*0.95);
+  const pb=vp.convertToViewportPoint(it.x+it.w, it.y-alto*0.32);
+  const xa=Math.round(Math.min(pa[0],pb[0])), xb=Math.round(Math.max(pa[0],pb[0]));
+  const ya=Math.round(Math.min(pa[1],pb[1])), yb=Math.round(Math.max(pa[1],pb[1]));
+  const an=xb-xa, al=yb-ya;
+  if(an<12||al<3||an>4000||xa<0||ya<0) return null;
+  let D; try{ D=cx.getImageData(xa,ya,an,al).data; }catch(_){ return null; }
+  /* tinta = bastante más oscuro que lo más claro de la banda; sirve también
+     sobre fondos de color */
+  let lmax=0;
+  for(let k=0;k<D.length;k+=4){ const l=D[k]*.3+D[k+1]*.6+D[k+2]*.1; if(l>lmax) lmax=l; }
+  const corte=lmax-58, tinta=new Array(an);
+  for(let x=0;x<an;x++){
+    let t=false;
+    for(let y=0;y<al&&!t;y++){ const k=(y*an+x)*4; if(D[k]*.3+D[k+1]*.6+D[k+2]*.1<corte) t=true; }
+    tinta[x]=t;
+  }
+  const bordes=[]; let i=0;
+  while(i<an){
+    if(tinta[i]){ i++; continue; }
+    let j=i; while(j<an&&!tinta[j]) j++;
+    if(i>0&&j<an&&j-i>=2) bordes.push(lado==="ini"? j : i);
+    i=j;
+  }
+  if(!bordes.length) return null;
+  const pe=vp.convertToViewportPoint(xEst,it.y)[0];
+  const tol=Math.max(4, alto*(vp.scale||1)*0.85);
+  let mejor=null,dmin=Infinity;
+  bordes.forEach(b=>{ const d=Math.abs((xa+b)-pe); if(d<dmin){ dmin=d; mejor=xa+b; } });
+  if(mejor===null||dmin>tol) return null;
+  return vp.convertToPdfPoint(mejor,(ya+yb)/2)[0];
+}
+/* Mira los píxeles pegados al recuadro: si hay tinta tocándolo, es un pedazo del
+   dato viejo que quedó fuera por diferencias de métrica. Se estira hasta la primera
+   columna en blanco (el espacio entre palabras), nunca más allá del tope. */
+/* El nombre real de la fuente ("Helvetica-Bold", "Times-Italic") vive en
+   page.commonObjs, pero las claves son POR DOCUMENTO: leerPdf abre uno y la vista
+   previa/exportador otro, así que `g_d0_f2` no existe en el segundo y la búsqueda
+   fallaba siempre — por eso se perdían negrita y cursiva. Solo cambia el índice del
+   documento, así que se traduce el prefijo. `page.__pref` lo fija quien renderiza. */
+function fuenteDe(page,clave){
+  if(!page||!clave) return {nombre:"",viva:""};
+  const probar=[clave], m=String(clave).match(/^g_d\d+_(.+)$/);
+  if(page.__pref && m) probar.push(page.__pref+m[1]);
+  for(const k of probar){
+    try{ if(page.commonObjs&&page.commonObjs.has(k)){
+      const g=page.commonObjs.get(k)||{};
+      /* `viva` es el nombre con el que pdf.js registró la fuente REAL del PDF en el
+         navegador (@font-face). Usándolo, el texto nuevo sale con la misma letra
+         exacta del original, no con una imitación genérica. */
+      return {nombre:String(g.name||""), viva:String(g.loadedName||k)};
+    } }catch(_){}
+  }
+  return {nombre:"",viva:""};
+}
+function nombreFuente(page,clave){ return fuenteDe(page,clave).nombre; }
+/* Respaldo cuando el PDF no da el nombre de la fuente: mide el GROSOR DEL TRAZO
+   —la mediana de las rachas horizontales de tinta— y lo compara con el mismo texto
+   dibujado en normal y en negrita. El grosor no depende del ancho de la fuente, así
+   que aguanta que la tipografía de reemplazo tenga métricas distintas. Si la medida
+   no es concluyente devuelve null y no se toca nada: una negrita inventada se ve
+   peor que una negrita perdida. */
+function trazoMediano(D,an,al,corte){
+  const r=[];
+  for(let y=0;y<al;y++){
+    let n=0;
+    for(let x=0;x<an;x++){
+      const k=(y*an+x)*4;
+      if(D[k]*.3+D[k+1]*.6+D[k+2]*.1<corte) n++;
+      else { if(n>0&&n<al*0.6) r.push(n); n=0; }
+    }
+    if(n>0&&n<al*0.6) r.push(n);
+  }
+  if(r.length<12) return null;
+  r.sort((a,b)=>a-b);
+  /* media recortada del 50 % central: la mediana de enteros cuantiza demasiado
+     y la negrita caía justo en el punto medio entre las dos referencias */
+  const a0=Math.floor(r.length*0.25), a1=Math.ceil(r.length*0.75);
+  let sum=0,n=0;
+  for(let i=a0;i<a1;i++){ sum+=r[i]; n++; }
+  return n? sum/n : null;
+}
+function pesoPorTinta(cx,vp,it,alto,fam,cur,ESC){
+  try{
+    const pa=vp.convertToViewportPoint(it.x, it.y+alto*0.95);
+    const pb=vp.convertToViewportPoint(it.x+it.w, it.y-alto*0.32);
+    const x0=Math.round(Math.min(pa[0],pb[0])), x1=Math.round(Math.max(pa[0],pb[0]));
+    const y0=Math.round(Math.min(pa[1],pb[1])), y1=Math.round(Math.max(pa[1],pb[1]));
+    const an=x1-x0, al=y1-y0;
+    if(an<20||al<6||an>3000||x0<0||y0<0||!it.str||it.str.trim().length<6) return null;
+    const D=cx.getImageData(x0,y0,an,al).data;
+    let lmax=0;
+    for(let k=0;k<D.length;k+=4){ const l=D[k]*.3+D[k+1]*.6+D[k+2]*.1; if(l>lmax) lmax=l; }
+    const real=trazoMediano(D,an,al,lmax-58);
+    if(real===null) return null;
+    const c=document.createElement("canvas"); c.width=an; c.height=al;
+    const q=c.getContext("2d"); q.textBaseline="alphabetic";
+    const mide=peso=>{
+      q.fillStyle="#fff"; q.fillRect(0,0,an,al);
+      q.fillStyle="#000"; q.font=`${cur}${peso}${Math.max(6,alto*ESC)}px ${fam}`;
+      q.fillText(it.str,0,al*0.76);
+      return trazoMediano(q.getImageData(0,0,an,al).data,an,al,197);
+    };
+    const dn=mide(""), db=mide("bold ");
+    if(dn===null||db===null||db<=dn) return null;      /* sin contraste: no arriesgo */
+    const medio=(dn+db)/2;
+    if(real>=medio+0.12) return "bold ";
+    if(real<=medio-0.12) return "";
+    return null;                                        /* indeciso: se deja como está */
+  }catch(_){ return null; }
+}
+function bordeTinta(cx,rect,tope,fondo){
+  const x0=Math.max(0,Math.round(rect.x-tope)), xf=Math.round(rect.x+rect.w+tope);
+  const y0=Math.max(0,Math.round(rect.y)), yf=Math.round(rect.y+rect.h);
+  const an=Math.max(1,xf-x0), al=Math.max(1,yf-y0);
+  let D; try{ D=cx.getImageData(x0,y0,an,al).data; }catch(_){ return {izq:0,der:0}; }
+  const m=(String(fondo).match(/\d+/g)||["255","255","255"]).map(Number);
+  const col=x=>{
+    const i=Math.round(x)-x0; if(i<0||i>=an) return false;
+    for(let y=0;y<al;y++){
+      const k=(y*an+i)*4;
+      if(Math.abs(D[k]-m[0])+Math.abs(D[k+1]-m[1])+Math.abs(D[k+2]-m[2])>90) return true;
+    }
+    return false;
+  };
+  let izq=0; while(izq<tope && col(rect.x-1-izq)) izq++;
+  let der=0; while(der<tope && col(rect.x+rect.w+der)) der++;
+  return {izq,der};
+}
+/* Donde el recuadro pisa un texto girado (marca de agua, sello vertical) no se
+   puede tapar a lo bruto: se perdería la marca. Pero recortar el recuadro tampoco
+   sirve, porque deja restos del texto viejo a la vista —probado, se ve peor—.
+   La salida es guardar esos trozos ANTES de tapar y devolverlos después borrando
+   solo los píxeles oscuros, que son los del texto. La marca, más clara, sobrevive. */
+function zonasGiradas(cx,P,vp,rect){
+  const z=[];
+  (P.girados||[]).forEach(g=>{
+    const q1=vp.convertToViewportPoint(g.x0,g.y0), q2=vp.convertToViewportPoint(g.x1,g.y1);
+    const gx0=Math.min(q1[0],q2[0])-1, gx1=Math.max(q1[0],q2[0])+1;
+    const gy0=Math.min(q1[1],q2[1])-1, gy1=Math.max(q1[1],q2[1])+1;
+    const x=Math.max(rect.x,gx0), y=Math.max(rect.y,gy0);
+    const an=Math.min(rect.x+rect.w,gx1)-x, al=Math.min(rect.y+rect.h,gy1)-y;
+    if(an<1||al<1) return;
+    try{ z.push({x:Math.round(x),y:Math.round(y),img:cx.getImageData(Math.round(x),Math.round(y),Math.round(an),Math.round(al))}); }catch(_){}
+  });
+  return z;
+}
+function devolverGirados(cx,zonas,fondo,tinta){
+  if(!zonas.length) return;
+  const F=(String(fondo).match(/\d+/g)||["255","255","255"]).map(Number);
+  const T=(String(tinta).match(/\d+/g)||["0","0","0"]).map(Number);
+  const lf=F[0]*.3+F[1]*.6+F[2]*.1, lt=T[0]*.3+T[1]*.6+T[2]*.1;
+  const corte=(lf+lt)/2;
+  zonas.forEach(z=>{
+    const d=z.img.data;
+    for(let k=0;k<d.length;k+=4){
+      if(d[k]*.3+d[k+1]*.6+d[k+2]*.1 < corte){ d[k]=F[0]; d[k+1]=F[1]; d[k+2]=F[2]; d[k+3]=255; }
+    }
+    try{ cx.putImageData(z.img,z.x,z.y); }catch(_){}
+  });
+}
+/* ================= LA PLANCHA =================
+   Raíz del problema: tapar con un rectángulo destruye lo que hubiera debajo
+   —marcas de agua, líneas, sombreados— y ningún truco lo reconstruye.
+   En vez de tapar, se vuelve a dibujar la página ENTERA omitiendo solo los glifos
+   de los datos que se van a cambiar. Lo que no se toca no se toca nunca.
+
+   pdf.js dibuja el texto de dos formas según el entorno: con fillText cuando pudo
+   cargar la fuente, y como trazados (ctx.fill sin argumentos) cuando no. Se
+   interceptan las dos: para los trazados se acumula la caja mientras se construye
+   el camino y se decide al rellenar.
+
+   Regla estricta: un glifo solo se omite si cae ENTERO dentro de la zona. Así un
+   vecino que se solape a medias nunca desaparece. */
+function zonasDe(P,vp,lista){
+  const z=[];
+  (lista||[]).forEach(r=>{
+    const tr=P.mapa.filter(m=>m.tIni<r.fin&&m.tFin>r.ini);
+    if(!tr.length) return;
+    let x1=Infinity,x2=-Infinity,base=null,alto=0;
+    tr.forEach(m=>{
+      const it=P.items[m.it], s=it.str, L=s.length||1;
+      const a=Math.max(0,Math.max(r.ini,m.tIni)-m.tIni);
+      const b=Math.min(s.length,Math.min(r.fin,m.tFin)-m.tIni);
+      x1=Math.min(x1, it.x + it.w*(a/L));
+      x2=Math.max(x2, it.x + it.w*(b/L));
+      if(base===null) base=it.y;
+      alto=Math.max(alto,it.h||10);
+    });
+    if(base===null) return;
+    const m1=vp.convertToViewportPoint(x1-alto*0.40, base+alto*1.10);
+    const m2=vp.convertToViewportPoint(x2+alto*0.40, base-alto*0.45);
+    z.push({x0:Math.min(m1[0],m2[0]), x1:Math.max(m1[0],m2[0]),
+            y0:Math.min(m1[1],m2[1]), y1:Math.max(m1[1],m2[1])});
+  });
+  return z;
+}
+async function planchaDe(page,vp,zonas){
+  const c=document.createElement("canvas");
+  c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
+  const cx=c.getContext("2d");
+  cx.fillStyle="#fff"; cx.fillRect(0,0,c.width,c.height);
+  if(!zonas||!zonas.length){ await page.render({canvasContext:cx,viewport:vp}).promise; return c; }
+  const dentro=(x,y)=>zonas.some(z=>x>=z.x0&&x<=z.x1&&y>=z.y0&&y<=z.y1);
+  const ID={a:1,b:0,c:0,d:1,e:0,f:0};
+  const tm=()=>{ try{ return cx.getTransform()||ID; }catch(_){ return ID; } };
+  let X0=Infinity,Y0=Infinity,X1=-Infinity,Y1=-Infinity;
+  const pt=(x,y)=>{ const m=tm(), dx=m.a*x+m.c*y+m.e, dy=m.b*x+m.d*y+m.f;
+    if(dx<X0)X0=dx; if(dx>X1)X1=dx; if(dy<Y0)Y0=dy; if(dy>Y1)Y1=dy; };
+  const cero=()=>{ X0=Infinity;Y0=Infinity;X1=-Infinity;Y1=-Infinity; };
+  const entero=()=>X1>=X0 && dentro(X0,Y0) && dentro(X1,Y1);
+  const prox=new Proxy(cx,{
+    get(t,p){
+      if(p==="beginPath")  return function(){ cero(); return t.beginPath(); };
+      if(p==="moveTo"||p==="lineTo") return function(x,y){ pt(x,y); return t[p](x,y); };
+      if(p==="bezierCurveTo") return function(a,b,c2,d,e,f){ pt(a,b);pt(c2,d);pt(e,f); return t.bezierCurveTo(a,b,c2,d,e,f); };
+      if(p==="quadraticCurveTo") return function(a,b,c2,d){ pt(a,b);pt(c2,d); return t.quadraticCurveTo(a,b,c2,d); };
+      if(p==="rect") return function(x,y,w,h){ pt(x,y); pt(x+w,y+h); return t.rect(x,y,w,h); };
+      if(p==="fill") return function(){ if(entero()) return; return t.fill.apply(t,arguments); };
+      if(p==="fillText"||p==="strokeText") return function(str,x,y){
+        const m=tm(), dx=m.a*x+m.c*y+m.e, dy=m.b*x+m.d*y+m.f;
+        if(dentro(dx,dy)) return;
+        return t[p].apply(t,arguments);
+      };
+      const v=t[p]; return typeof v==="function"? v.bind(t) : v;
+    },
+    set(t,p,v){ t[p]=v; return true; }
+  });
+  await page.render({canvasContext:prox,viewport:vp}).promise;
+  return c;
+}
+function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig){
+  const campo=S.campos.find(f=>f.clave===r.clave);
+  const nuevo=campo? String(campo.valor==null?"":campo.valor).trim() : "";
+  const trozos=P.mapa.filter(m=>m.tIni<r.fin&&m.tFin>r.ini);
+  if(!trozos.length) return;
+  const it0=P.items[trozos[0].it];
+  /* la tipografía se deduce ANTES: hace falta para medir el ancho del texto viejo */
+  const FT=fuenteDe(page,it0.font), nombre=FT.nombre;
+  const gen=((P.estilos||{})[it0.font]||{}).fontFamily||"";
+  const pista=nombre+" "+gen;
+  /* OJO con el orden: `gen` vale "sans-serif", y /serif/ coincide dentro de esa
+     palabra. Si se prueba serif primero, TODA fuente sans acaba dibujada en Times. */
+  const fam=/courier|mono|consol/i.test(pista)? '"Courier New",monospace'
+          : (/sans/i.test(gen) || /helvetica|arial|calibri|verdana|tahoma|segoe|roboto|lato|futura|gill|myriad|frutiger/i.test(nombre))
+            ? "Helvetica,Arial,sans-serif"
+          : /times|serif|roman|georgia|garamond|minion|book|cambria|palatino/i.test(pista)? '"Times New Roman",Times,serif'
+          : "Helvetica,Arial,sans-serif";
+  /* la fuente real del PDF primero; la genérica solo como respaldo si no cargó */
+  const famR = FT.viva? `"${FT.viva}",${fam}` : fam;
+  const cur=/italic|oblique/i.test(pista)?"italic ":"";
+  let neg=/bold|black|heavy|semibold|demibold|[-,_ ]bd\b|[-,_ ](7|8|9)00\b/i.test(pista)?"bold ":"";
+  if(!neg && !nombre){                       /* el PDF no dio el nombre: se mide la tinta */
+    const p=pesoPorTinta(cx,vp,it0,it0.h||10,famR,cur,ESC);
+    if(p!==null) neg=p;
+  }
+  /* dónde empieza y termina el dato dentro del fragmento: se MIDE con la fuente.
+     Repartir el ancho en partes iguales entre las letras corría el recuadro y
+     dejaba restos del texto viejo a la vista en tipografías proporcionales. */
+  cx.font=`${cur}${neg}100px ${famR}`;
+  const anchoDe=s=>s? cx.measureText(s).width : 0;
+  let x1=Infinity,x2=-Infinity,base=null,alto=0;
+  trozos.forEach(m=>{ alto=Math.max(alto,P.items[m.it].h||10); if(base===null) base=P.items[m.it].y; });
+  let exacto=true;
+  trozos.forEach(m=>{
+    const it=P.items[m.it], s=it.str;
+    const a=Math.max(0, Math.max(r.ini,m.tIni)-m.tIni);
+    const b=Math.min(s.length, Math.min(r.fin,m.tFin)-m.tIni);
+    const tot=anchoDe(s)||1;
+    const eA=it.x + it.w*(anchoDe(s.slice(0,a))/tot);
+    const eB=it.x + it.w*(anchoDe(s.slice(0,b))/tot);
+    const cxM=(conPlancha&&cvOrig)? cvOrig.getContext("2d") : cx;   /* medir donde el texto viejo aún está */
+    let xa=xAjustado(cxM,vp,it,a,"ini",eA,alto);
+    let xb=xAjustado(cxM,vp,it,b,"fin",eB,alto);
+    const propio=it.w*((anchoDe(s.slice(0,b))-anchoDe(s.slice(0,a)))/tot);
+    /* si un borde quedó anclado, el otro se deriva de él: el trecho a medir es
+       solo el dato, no todo el renglón, y el error se vuelve despreciable */
+    if(xa===null && xb!==null) xa=xb-propio;
+    if(xb===null && xa!==null) xb=xa+propio;
+    if(xa===null){ exacto=false; xa=eA; xb=eB; }
+    x1=Math.min(x1,xa); x2=Math.max(x2,xb);
+  });
+  /* El recuadro se deja CONSERVADOR (nunca invade la palabra anterior) y es
+     bordeTinta() quien lo estira sobre los píxeles: se detiene solo en la primera
+     columna en blanco, así traga el resto del dato viejo y nada más. */
+  const xTexto=x1;                      /* el valor nuevo se dibuja donde empezaba el viejo */
+  /* El recuadro medía 1.27 × la altura de letra. Con interlineado apretado eso
+     invade el renglón de al lado y le borra un trozo. Se recorta con el espacio
+     real que hay hasta el renglón vecino más cercano que se solape en horizontal. */
+  let arr=Infinity, aba=Infinity;
+  P.items.forEach(o=>{
+    if(!o.str || !o.str.trim()) return;
+    const dy=o.y-base;
+    if(Math.abs(dy)<alto*0.4) return;                  /* mismo renglón */
+    if(o.x>x2 || o.x+o.w<x1) return;                   /* no se cruza en horizontal */
+    if(dy>0) arr=Math.min(arr,dy); else aba=Math.min(aba,-dy);
+  });
+  const sube=Math.max(alto*0.62, Math.min(alto*0.95, arr-alto*0.34));
+  const baja=Math.max(alto*0.10, Math.min(alto*0.32, aba-alto*0.66));
+  const p1=vp.convertToViewportPoint(x1, base+sube);
+  const p2=vp.convertToViewportPoint(x2, base-baja);
+  const rect={x:Math.min(p1[0],p2[0])-1, y:Math.min(p1[1],p2[1]),
+              w:Math.abs(p2[0]-p1[0])+2, h:Math.abs(p2[1]-p1[1])};
+  /* Con plancha el dato viejo ya no está: no se tapa nada, solo se escribe el
+     nuevo. El color de tinta se muestrea del render original, donde sí está. */
+  let tinta;
+  if(conPlancha){
+    tinta = cvOrig? tintaDe(cvOrig.getContext("2d"),rect) : "rgb(0,0,0)";
+  }else{
+    const fondo=fondoDe(cx,rect);
+    if(!exacto){                        /* red de seguridad solo si no hubo anclaje exacto */
+      const est=bordeTinta(cx,rect,Math.max(3,alto*ESC*0.55),fondo);
+      rect.x-=est.izq; rect.w+=est.izq+est.der;
+    }
+    tinta=tintaDe(cx,rect);
+    const zonas=zonasGiradas(cx,P,vp,rect); /* guardar la marca de agua antes de tapar */
+    cx.fillStyle=fondo;
+    cx.fillRect(rect.x,rect.y,rect.w,rect.h);
+    devolverGirados(cx,zonas,fondo,tinta);  /* y devolverla sin el texto viejo */
+  }
+  if(!nuevo) return;
+  /* si el texto original sigue pegado dentro del mismo fragmento, el hueco
+     disponible termina justo donde terminaba el dato viejo */
+  const ult=trozos[trozos.length-1];
+  const pegado = r.fin < ult.tFin;
+  let sig = pegado ? x2 : P.ancho;
+  if(!pegado) P.items.forEach(o=>{ if(o!==it0 && Math.abs(o.y-base)<alto*0.6 && o.x>x2-0.5) sig=Math.min(sig,o.x); });
+  const dispo=Math.max(12,sig-xTexto-1)*ESC;
+  let tam=(it0.h||10)*ESC;
+  cx.textBaseline="alphabetic"; cx.fillStyle=tinta;
+  cx.font=`${cur}${neg}${tam}px ${famR}`;
+  let k=0;
+  while(cx.measureText(nuevo).width>dispo && k++<16){ tam*=0.94; cx.font=`${cur}${neg}${tam}px ${famR}`; }
+  const b=vp.convertToViewportPoint(xTexto, base);
+  cx.fillText(nuevo,b[0],b[1]);
+}
+function imprimirHojas(hojas){
+  const w0=Math.round(hojas[0].w), h0=Math.round(hojas[0].h);
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>${esc(S.doc.titulo||"Documento")}</title>
+<style>@page{size:${w0}pt ${h0}pt;margin:0}html,body{margin:0;padding:0;background:#fff}
+img{display:block;width:${w0}pt;height:${h0}pt;page-break-after:always}
+img:last-child{page-break-after:auto}</style></head><body>
+${hojas.map(h=>`<img src="${h.url}">`).join("")}
+<script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+</body></html>`;
+  const w=window.open("","_blank");
+  if(w){ w.document.write(html); w.document.close(); w.focus(); toast("Elige “Guardar como PDF” en el diálogo"); }
+  else { bajar((S.doc.consecutivo||"documento")+".html",html,"text/html");
+         toast("Descargué el HTML: ábrelo y usa Ctrl+P → Guardar como PDF"); }
+}
+async function exportarIgual(){
+  const btn=$("#btnPdf"), etq=btn.textContent;
+  btn.disabled=true; btn.textContent="Armando…";
+  try{
+    const lib=await cargarPdfJs();
+    const pdf=await lib.getDocument({data:DOC.bytes.slice(0)}).promise;
+    const ESC=2.2, hojas=[];
+    for(let i=0;i<DOC.paginas.length;i++){
+      const P=DOC.paginas[i], page=await pdf.getPage(P.num);
+      try{ const tc=await page.getTextContent(); const fn=(tc.items.find(x=>x.fontName)||{}).fontName||"";
+           const mm=fn.match(/^(g_d\d+_)/); if(mm) page.__pref=mm[1]; }catch(_){}
+      const vp=page.getViewport({scale:ESC}), lista=REEMP[i]||[];
+      /* render normal: sirve para muestrear el color y medir dónde estaba el dato */
+      const orig=document.createElement("canvas");
+      orig.width=Math.ceil(vp.width); orig.height=Math.ceil(vp.height);
+      const ox=orig.getContext("2d");
+      ox.fillStyle="#fff"; ox.fillRect(0,0,orig.width,orig.height);
+      await page.render({canvasContext:ox,viewport:vp}).promise;
+      /* plancha: la misma página SIN los datos viejos. Nada más se toca. */
+      let cv=null;
+      try{ cv=await planchaDe(page,vp,zonasDe(P,vp,lista)); }catch(e){ console.error(e); cv=null; }
+      const conPl=!!cv;
+      if(!cv){                                  /* respaldo: el camino de tapar */
+        cv=document.createElement("canvas");
+        cv.width=orig.width; cv.height=orig.height;
+        cv.getContext("2d").drawImage(orig,0,0);
+      }
+      const cx=cv.getContext("2d");
+      lista.forEach(r=>{ try{ pintarCambio(cx,vp,page,P,r,ESC,conPl,orig); }catch(_){} });
+      hojas.push({url:cv.toDataURL("image/png"), w:vp.width/ESC, h:vp.height/ESC});
+    }
+    imprimirHojas(hojas);
+  }catch(e){ console.error(e); toast("No pude armar la copia del PDF"); }
+  finally{ btn.disabled=false; btn.textContent=etq; }
+}
+$("#btnPdf").onclick=()=>{
+  if(DOC && $("#salidaIgual").checked){ exportarIgual(); return; }
+  const w=window.open("","_blank");
+  if(w){ w.document.write(docHTML()); w.document.close(); w.focus();
+    setTimeout(()=>{ w.print(); },400);
+    toast("Elige “Guardar como PDF” en el diálogo");
+  } else {
+    try{ window.print(); toast("Elige “Guardar como PDF”"); }
+    catch(_){ bajar((S.doc.consecutivo||"documento")+".html",docHTML(),"text/html");
+      toast("Descargué el HTML: ábrelo y usa Ctrl+P → Guardar como PDF"); }
+  }
+};
+$("#btnHtml").onclick=()=>{ bajar((S.doc.consecutivo||"documento")+".html",docHTML(),"text/html"); toast("HTML descargado"); };
+$("#btnJsonOut").onclick=()=>{ bajar((slug(S.doc.titulo)||"plantilla")+".json",JSON.stringify(S,null,2),"application/json"); toast("Plantilla exportada"); };
+$("#btnJsonIn").onclick=()=>$("#fileJson").click();
+$("#fileJson").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ const j=JSON.parse(r.result);
+      S={...S,...j}; S.campos=(j.campos||[]).map(x=>({...x,id:uid()}));
+      pintarTodo(); toast("Plantilla importada");
+    }catch(_){ toast("El archivo no es una plantilla válida"); } };
+  r.readAsText(f);
+});
+
+/* ============ diálogo de texto ============ */
+function askText(titulo,valor=""){
+  return new Promise(res=>{
+    const m=$("#modal"), i=$("#mInput");
+    $("#mTitulo").textContent=titulo; i.value=valor; m.classList.add("on");
+    setTimeout(()=>{i.focus();i.select();},30);
+    const cerrar=v=>{ m.classList.remove("on"); $("#mOk").onclick=null; $("#mCancel").onclick=null; i.onkeydown=null; res(v); };
+    $("#mOk").onclick=()=>cerrar(i.value.trim()||null);
+    $("#mCancel").onclick=()=>cerrar(null);
+    i.onkeydown=ev=>{ if(ev.key==="Enter"){ev.preventDefault();cerrar(i.value.trim()||null);} if(ev.key==="Escape") cerrar(null); };
+  });
+}
+
+/* ============ mi plantilla ============ */
+const bonito=k=>k.replace(/_/g," ").replace(/^./,ch=>ch.toUpperCase());
+function detectarCampos(txt){
+  let n=0;
+  [...new Set([...txt.matchAll(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi)].map(m=>m[1].toLowerCase()))].forEach(k=>{
+    if(AUTO.includes(k) || S.campos.some(f=>f.clave===k)) return;
+    S.campos.push({id:uid(),etiqueta:bonito(k),clave:k,valor:"",bloque:false}); n++;
+  });
+  return n;
+}
+function usarTexto(deArchivo){
+  let t=$("#imp_texto").value;
+  if(!t.trim()){ toast("Pega primero el texto de tu documento"); return null; }
+  soltarPdf();
+  if(DOC_PEND && DOC_PEND.paginas.map(p=>p.texto).join("\n\n")===t){
+    DOC=DOC_PEND; REEMP=DOC.paginas.map(()=>[]);
+    PAGS=DOC.paginas.map(p=>p.texto);
+  } else {
+    PAGS = (PAGS_PEND && PAGS_PEND.join("\n\n")===t) ? PAGS_PEND.slice() : null;
+  }
+  DOC_PEND=null; PAGS_PEND=null;
+  if(deArchivo && !DOC){                          /* la 1a línea suelta y corta es el título */
+    const lin=t.split("\n"), primera=(lin[0]||"").trim();
+    const sueltaOtitulo = !(lin[1]||"").trim() ||
+      (primera===primera.toUpperCase() && primera.split(/\s+/).length>=2 && !/[:.]$/.test(primera));
+    if(lin.length>2 && primera && primera.length<=60 && sueltaOtitulo){
+      S.doc.titulo=primera;
+      t=lin.slice(1).join("\n").replace(/^\n+/,"");
+      if(PAGS){
+        PAGS[0]=PAGS[0].split("\n").slice(1).join("\n").replace(/^\n+/,"");
+        if(PAGS.join("\n\n")!==t) PAGS=null;
+      }
+    }
+  }
+  S.doc.cuerpo=t;
+  const n=detectarCampos(t);
+  S.campos=S.campos.filter(f=>t.includes("{{"+f.clave+"}}"));   /* fuera los campos que este texto no usa */
+  pintarTodo();
+  SUG = DOC? [] : sugerir(S.doc.cuerpo);      /* con PDF los campos se eligen a mano */
+  renderSug();
+  return {n, s:SUG.length};
+}
+$("#btnUsarTexto").onclick=()=>{
+  const r=usarTexto(); if(!r) return;
+  toast(r.n? `Plantilla lista: ${r.n} campo${r.n>1?"s":""} detectado${r.n>1?"s":""}`
+       : r.s? `Texto cargado: ${r.s} valores detectados abajo`
+       : "Texto cargado. Selecciona en el cuerpo lo que cambia y conviértelo en campo");
+};
+$("#btnSubirTxt").onclick=()=>$("#fileTxt").click();
+$("#fileTxt").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    $("#imp_texto").value=r.result;
+    const x=usarTexto(1);
+    toast(x&&x.s? `Archivo cargado: ${x.s} valores detectados` : "Archivo cargado");
+  };
+  r.readAsText(f);
+});
+
+/* ============ páginas del PDF y creación de campos ============ */
+/* DOC guarda el PDF original intacto (texto + posición de cada fragmento).
+   REEMP lista qué tramos de ese texto original ocupa cada campo, así la salida
+   puede rehacerse encima del PDF real sin perder la estructura. */
+let PAGS=null, PAGS_PEND=null, DOC=null, DOC_PEND=null, REEMP=[];
+/* PROY_ACT = el proyecto que está abierto ahora; mientras exista, los cambios se
+   guardan encima de él sin volver a preguntar el nombre.
+   PDF_B64 evita recodificar el PDF entero en cada autoguardado. */
+let PROY_ACT=null, PDF_B64=null, CARGANDO=false, tAuto=null;
+function soltarPdf(){
+  DOC=null; REEMP=[]; PROY_ACT=null; PDF_B64=null;
+  clearTimeout(tAuto); tAuto=null;
+  if(typeof limpiarCalcado==="function") limpiarCalcado();
+}
+function textoPagina(i){
+  const p=DOC.paginas[i], rs=[...(REEMP[i]||[])].sort((a,b)=>a.ini-b.ini);
+  let out="", pos=0;
+  for(const r of rs){ if(r.ini<pos) continue; out+=p.texto.slice(pos,r.ini)+"{{"+r.clave+"}}"; pos=r.fin; }
+  return out+p.texto.slice(pos);
+}
+function sincronizar(){
+  if(!DOC) return;
+  PAGS=DOC.paginas.map((_,i)=>textoPagina(i));
+  S.doc.cuerpo=PAGS.join("\n\n");
+}
+function ocupado(i,ini,fin){ return (REEMP[i]||[]).some(r=>ini<r.fin&&fin>r.ini); }
+function aOriginal(i,off){          /* posición en el texto de hoy -> posición en el original */
+  const rs=[...(REEMP[i]||[])].sort((a,b)=>a.ini-b.ini);
+  let delta=0;
+  for(const r of rs){
+    const iniAct=r.ini+delta, largo=("{{"+r.clave+"}}").length;
+    if(off<iniAct) break;
+    if(off<iniAct+largo) return -1;             /* cayó dentro de un marcador */
+    delta+=largo-(r.fin-r.ini);
+  }
+  return off-delta;
+}
+/* ---- cuántos lugares ocupa un campo y cuántos podría ocupar ---- */
+function tramosDe(clave){ return REEMP.reduce((a,l)=>a+l.filter(r=>r.clave===clave).length,0); }
+function ocurrenciasDe(txt){
+  if(!DOC||!txt) return 0;
+  return DOC.paginas.reduce((a,p)=>a+(p.texto.split(txt).length-1),0);
+}
+/* Conserva la aparición que el usuario marcó (`pref`) y borra las demás.
+   Si no hay marca —proyectos viejos, o campos creados de otro modo— se queda
+   con la primera en orden de documento. */
+function dejarUnTramo(clave,pref){
+  let eleg=null;
+  if(pref && REEMP[pref.pag])
+    REEMP[pref.pag].forEach(r=>{ if(r.clave===clave && r.ini<=pref.ini && r.fin>pref.ini) eleg={p:pref.pag,r}; });
+  if(!eleg)
+    for(let i=0;i<REEMP.length && !eleg;i++){
+      const c=[...REEMP[i]].filter(r=>r.clave===clave).sort((a,b)=>a.ini-b.ini)[0];
+      if(c) eleg={p:i,r:c};
+    }
+  REEMP=REEMP.map((l,i)=>l.filter(r=>r.clave!==clave || (eleg && i===eleg.p && r===eleg.r)));
+}
+/* anota todas las apariciones del texto original que no pisen otro campo */
+function todosLosTramos(clave,txt){
+  if(!DOC||!txt) return 0;
+  let n=0;
+  DOC.paginas.forEach((p,i)=>{
+    let k=-1;
+    while((k=p.texto.indexOf(txt,k+1))>=0){
+      if(!ocupado(i,k,k+txt.length)){ (REEMP[i]=REEMP[i]||[]).push({ini:k,fin:k+txt.length,clave}); n++; }
+    }
+  });
+  return n;
+}
+function quitarReemplazos(clave){
+  if(!DOC) return;
+  REEMP=REEMP.map(l=>l.filter(r=>r.clave!==clave));
+  sincronizar();
+}
+function reemplazarEnCuerpo(de,a,loc){      /* devuelve cuántos lugares cambió */
+  const clave=a.replace(/^\{\{|\}\}$/g,"");
+  if(DOC){
+    let n=0;
+    if(loc){
+      const i=loc.pag, p=DOC.paginas[i]; if(!p) return 0;
+      const off=aOriginal(i,loc.off);
+      if(off<0||p.texto.substr(off,de.length)!==de||ocupado(i,off,off+de.length)) return 0;
+      REEMP[i].push({ini:off,fin:off+de.length,clave}); n=1;
+    } else {
+      DOC.paginas.forEach((p,i)=>{
+        let k=-1;
+        while((k=p.texto.indexOf(de,k+1))>=0){
+          if(!ocupado(i,k,k+de.length)){ REEMP[i].push({ini:k,fin:k+de.length,clave}); n++; }
+        }
+      });
+    }
+    if(n) sincronizar();
+    return n;
+  }
+  if(loc){
+    if(PAGS){
+      const p=PAGS[loc.pag]; if(p===undefined||p.substr(loc.off,de.length)!==de) return 0;
+      PAGS[loc.pag]=p.slice(0,loc.off)+a+p.slice(loc.off+de.length);
+      S.doc.cuerpo=PAGS.join("\n\n"); return 1;
+    }
+    const c=S.doc.cuerpo; if(c.substr(loc.off,de.length)!==de) return 0;
+    S.doc.cuerpo=c.slice(0,loc.off)+a+c.slice(loc.off+de.length); return 1;
+  }
+  const n=S.doc.cuerpo.split(de).length-1; if(!n) return 0;
+  if(PAGS){ PAGS=PAGS.map(p=>p.split(de).join(a)); S.doc.cuerpo=PAGS.join("\n\n"); }
+  else S.doc.cuerpo=S.doc.cuerpo.split(de).join(a);
+  return n;
+}
+function nuevoCampo(valor,etiqueta,loc,marca){
+  valor=String(valor||"").trim();
+  if(!valor||!S.doc.cuerpo.includes(valor)) return null;
+  const et=etiquetaLibre((etiqueta||"Dato").trim()), clave=claveLibre(et);
+  const veces=reemplazarEnCuerpo(valor,`{{${clave}}}`,loc);
+  if(!veces) return null;
+  S.campos.push({id:uid(),etiqueta:et,clave,valor,bloque:false,orig:valor,sel:marca||null});
+  return {clave,et,veces};
+}
+function usarCampoAqui(clave,valor,loc){
+  valor=String(valor||"").trim();
+  if(!valor||!S.doc.cuerpo.includes(valor)) return null;
+  const veces=reemplazarEnCuerpo(valor,`{{${clave}}}`,loc);
+  if(!veces) return null;
+  return {veces};
+}
+function enfocarCampo(clave){
+  const i=S.campos.findIndex(f=>f.clave===clave);
+  const el=$("#campos").children[i]; if(!el) return;
+  const inp=el.querySelector("[data-k=valor]");
+  if(inp){ inp.focus(); inp.select(); if(el.scrollIntoView) el.scrollIntoView({block:"center"}); }
+}
+async function hacerCampoDe(sel,loc,marca){
+  sel=String(sel||"").trim();
+  if(!sel){ toast("Primero selecciona el dato que cambia"); return; }
+  const et=await askText("¿Cómo se llama este campo?", sel.length<=28?sel:"");
+  if(!et) return;
+  const r=nuevoCampo(sel,et,loc,marca);
+  if(!r){ toast("Ese texto ya no está en el documento"); return; }
+  SUG=SUG.filter(x=>S.doc.cuerpo.includes(x.valor));
+  pintarTodo(); renderSug(); enfocarCampo(r.clave);
+  toast(r.veces>1? `Campo creado y reemplazado en ${r.veces} lugares` : "Campo creado");
+}
+
+/* ============ lector del documento ============ */
+function renderLector(){
+  const box=$("#lector"); if(!box) return;
+  const bloques=(PAGS&&PAGS.length)?PAGS:[S.doc.cuerpo];
+  box.innerHTML="";
+  bloques.forEach((p,i)=>{
+    const el=document.createElement("div"); el.className="pag";
+    if(bloques.length>1){
+      const h=document.createElement("div"); h.className="pagnum";
+      h.textContent="Página "+(i+1)+" de "+bloques.length;
+      el.appendChild(h);
+    }
+    const c=document.createElement("div"); c.className="pagtx";
+    c.innerHTML=esc(p).replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi,(m,k)=>`<span class="mk" data-k="${esc(k)}" title="Ir al campo">{{${esc(k)}}}</span>`);
+    el.appendChild(c); box.appendChild(el);
+  });
+  pintarSelCampos(); estadoLector();
+  $("#wrapIgual").hidden=!DOC;
+  const car=S.doc.cuerpo.length, nm=S.campos.length;
+  $("#lectorInfo").textContent = car
+    ? `${bloques.length>1?bloques.length+" páginas · ":""}${car.toLocaleString("es-CO")} caracteres · ${nm} campo${nm===1?"":"s"}`
+    : "Todavía no has cargado ningún documento.";
+}
+let SEL="", SEL_LOC=null;
+function ubicarSeleccion(){
+  const s=window.getSelection(), l=$("#lector");
+  if(!s||!s.rangeCount||!l) return null;
+  const rg=s.getRangeAt(0);
+  let cont=rg.startContainer;
+  while(cont&&!(cont.classList&&cont.classList.contains("pagtx"))) cont=cont.parentNode;
+  if(!cont) return null;
+  const antes=document.createRange();
+  antes.selectNodeContents(cont);
+  antes.setEnd(rg.startContainer,rg.startOffset);
+  const bruto=antes.toString();
+  const crudo=s.toString();
+  const recorte=crudo.length-crudo.replace(/^\s+/,"").length;   /* la selección puede traer espacios */
+  const pags=[...l.querySelectorAll(".pagtx")];
+  return {pag:pags.indexOf(cont), off:bruto.length+recorte};
+}
+function pintarSelCampos(){
+  const sel=$("#selCampoExist"); if(!sel) return;
+  const prev=sel.value;
+  sel.innerHTML=S.campos.length
+    ? S.campos.map(f=>`<option value="${esc(f.clave)}">${esc(f.etiqueta)}</option>`).join("")
+    : '<option value="">— sin campos aún —</option>';
+  if(prev&&S.campos.some(f=>f.clave===prev)) sel.value=prev;
+  sel.disabled=!S.campos.length;
+}
+function estadoLector(){
+  const hay=!!SEL;
+  $("#btnHacerCampo").disabled=!hay;
+  $("#btnUsarCampo").disabled=!hay||!S.campos.length;
+  const n=SEL? S.doc.cuerpo.split(SEL).length-1 : 0;
+  $("#lectorSel").textContent = hay
+    ? `Seleccionado: “${SEL.length>60?SEL.slice(0,60)+"…":SEL}”${n>1?` · aparece ${n} veces`:""}`
+    : "Nada seleccionado";
+}
+function selDelLector(){
+  const s=window.getSelection(), l=$("#lector");
+  if(!s||!l||s.isCollapsed||!s.rangeCount) return "";
+  if(!l.contains(s.anchorNode)||!l.contains(s.focusNode)) return "";
+  return s.toString().replace(/^\s+|\s+$/g,"");
+}
+document.addEventListener("selectionchange",()=>{
+  if(!$("#btnHacerCampo")) return;
+  SEL=selDelLector();
+  SEL_LOC=SEL? ubicarSeleccion() : null;
+  estadoLector();
+});
+function palabraEn(x,y){
+  let r=null;
+  if(document.caretRangeFromPoint) r=document.caretRangeFromPoint(x,y);
+  else if(document.caretPositionFromPoint){
+    const q=document.caretPositionFromPoint(x,y);
+    if(q){ r=document.createRange(); r.setStart(q.offsetNode,q.offset); r.collapse(true); }
+  }
+  if(!r||!r.startContainer||r.startContainer.nodeType!==3) return null;
+  const tx=r.startContainer.textContent, corte=/[\s()¿?¡!;:«»"“”'\[\]]/;
+  let a=r.startOffset,b=r.startOffset;
+  while(a>0&&!corte.test(tx[a-1])) a--;
+  while(b<tx.length&&!corte.test(tx[b])) b++;
+  while(b>a&&/[.,]/.test(tx[b-1])) b--;      /* deja fuera el punto o la coma del final */
+  while(a<b&&/[.,]/.test(tx[a])) a++;
+  if(b<=a) return null;
+  const rr=document.createRange(); rr.setStart(r.startContainer,a); rr.setEnd(r.startContainer,b);
+  return rr;
+}
+function montarLector(){
+  const l=$("#lector"); if(!l) return;
+  l.addEventListener("click",e=>{
+    if(e.target.classList&&e.target.classList.contains("mk")){ enfocarCampo(e.target.dataset.k); return; }
+    const s=window.getSelection();
+    if(s&&!s.isCollapsed) return;                       /* ya seleccionó arrastrando */
+    const r=palabraEn(e.clientX,e.clientY); if(!r) return;
+    s.removeAllRanges(); s.addRange(r);
+    SEL=selDelLector(); SEL_LOC=SEL? ubicarSeleccion() : null;
+    estadoLector();
+  });
+  $("#btnHacerCampo").onclick=()=>{
+    const loc=$("#soloAqui").checked? SEL_LOC : null;
+    /* se guarda la aparición marcada ANTES de reemplazar, en coordenadas del
+       original, para que "solo la seleccionada" conserve la suya y no la primera */
+    let marca=null;
+    if(DOC && SEL_LOC){ const o=aOriginal(SEL_LOC.pag,SEL_LOC.off); if(o>=0) marca={pag:SEL_LOC.pag,ini:o}; }
+    hacerCampoDe(SEL||selDelLector(), loc, marca);
+  };
+  $("#btnUsarCampo").onclick=()=>{
+    const clave=$("#selCampoExist").value;
+    const f=S.campos.find(x=>x.clave===clave);
+    if(!f||!SEL){ toast("Elige un campo y selecciona el texto"); return; }
+    const r=usarCampoAqui(clave,SEL,$("#soloAqui").checked? SEL_LOC : null);
+    if(!r){ toast("Ese texto ya no está en el documento"); return; }
+    SUG=SUG.filter(x=>S.doc.cuerpo.includes(x.valor));
+    SEL=""; SEL_LOC=null;
+    pintarTodo(); renderSug();
+    toast(r.veces>1? `“${f.etiqueta}” ahora llena ${r.veces} lugares más` : `Ese texto ahora lo llena “${f.etiqueta}”`);
+  };
+}
+montarLector();
+
+/* ============ valores detectados ============ */
+let SUG=[];
+const SUG_STOP=/^(el|la|los|las|de|del|y|o|en|por|para|con|se|su|sus|un|una|que|al|no|si|a|nit|cc|clausula|paragrafo|primera|segunda|tercera|cuarta|quinta|sexta|septima|octava|novena|decima|objeto|valor|total|anexo|articulo|capitulo|contrato|contratante|contratista|nota|entre|debe|hace|constar|firma|firmas|pagina|senores|cordialmente|atentamente)$/i;
+const SUG_PAT=[
+  {t:"Valor",             re:/\$\s?\d[\d.,]*/g},
+  {t:"Fecha",             re:/\b\d{1,2}\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/gi},
+  {t:"Correo",            re:/\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b/g},
+  {t:"Teléfono",          re:/\b(?:\+?57[\s-]?)?3\d{2}[\s-]?\d{3}[\s-]?\d{4}\b/g},
+  {t:"NIT o cédula",      re:/\b\d{1,3}(?:\.\d{3}){2,}(?:-\d)?\b/g},
+  {t:"Porcentaje",        re:/\b\d{1,3}(?:[.,]\d+)?\s?%/g},
+  {t:"Espacio en blanco", re:/_{3,}/g},
+  {t:"Nombre",            may:1, re:/\b[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ&.\-]*(?:[ \t]+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ&.\-]*){1,5}\b/g},
+  {t:"Nombre",            may:1, ini:1, re:/[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:[ \t]+(?:de|del|la|los|las|y))?(?:[ \t]+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}){1,3}/g}
+];
+/* De un texto capturado, cuál es el dato que cambia. "Teléfono comercial 1: 3052785057"
+   -> pre "Teléfono comercial 1: ", dato "3052785057". No recorta el campo: el campo
+   sigue apuntando al texto completo. Esto es solo para mostrarlo. */
+function parteDato(txt){
+  const t=String(txt||"");
+  const m=t.match(/^([^\n]{0,44}?[:：]\s*)(\S[^\n]*)$/);
+  if(m && m[2].trim()) return {pre:m[1], dato:m[2].trim()};
+  for(const p of SUG_PAT){
+    if(p.may) continue;                    /* los patrones de nombre no acotan nada útil aquí */
+    p.re.lastIndex=0;
+    const x=p.re.exec(t);
+    if(x){
+      const v=x[0].trim();
+      if(v.length>=3 && v.length<t.trim().length) return {pre:t.slice(0,x.index), dato:v};
+    }
+  }
+  return {pre:"", dato:t.trim()};
+}
+function datoDe(f){                     /* el corregido a mano manda sobre el detectado */
+  if(f.dato && f.orig && f.orig.includes(f.dato)) return f.dato;
+  return parteDato(f.orig).dato;
+}
+/* Interruptor por campo: decide si ESE campo toma una sola aparición o todas.
+   A diferencia del global, este es reversible porque reescribe REEMP. */
+function botonSolo(f){
+  if(!DOC||!f.orig) return "";
+  const tot=ocurrenciasDe(f.orig);
+  if(tot<2) return "";                      /* solo aparece una vez: no hay nada que elegir */
+  const solo=tramosDe(f.clave)<=1;
+  /* siempre hay exactamente uno activo: el estado sale de cuántos tramos ocupa */
+  return `<div class="solobtns">`+
+    `<button class="btn sm tog${solo?"":" ok"}" data-solo="todas"><span class="pt"></span>Modificar las ${tot} apariciones</button>`+
+    `<button class="btn sm tog${solo?" ok":""}" data-solo="una"><span class="pt"></span>Modificar solo la aparición seleccionada</button>`+
+  `</div>`;
+}
+function cajaOrig(f){
+  if(!f.orig) return "";
+  const dato=datoDe(f), i=f.orig.indexOf(dato);
+  const pre = i>0? f.orig.slice(0,i) : "";
+  const post= i>=0? f.orig.slice(i+dato.length) : "";
+  return `<div class="orig">
+      <div class="ohead"><span class="ok">Valor a modificar</span>
+        <button class="btn ed sm" data-ed="1" title="Corregir cuál es el dato que cambia">✏︎ corregir</button></div>
+      <div class="ov">`+
+        (pre? `<span class="opre">${esc(pre)}</span>` : "")+
+        `<b>${esc(dato)}</b>`+
+        (post? `<span class="opre">${esc(post)}</span>` : "")+
+      `</div></div>`;
+}
+const sinTildes=s=>String(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+function etiquetaCercana(txt,i,def){
+  const m=txt.slice(Math.max(0,i-60),i).match(/([A-Za-zÁÉÍÓÚÑáéíóúñ][^\n:]{2,40}):\s*$/);
+  if(!m) return def;
+  const et=m[1].split(/[.;•·—]/).pop().trim().replace(/\s+/g," ");
+  return (!et||et.split(/\s+/).length>4||et.length>32)? def : et;
+}
+function sugerir(txt){
+  const out=[];
+  const meter=(valor,etiqueta,tipo)=>{
+    valor=String(valor).trim().replace(/[.,;:\-&]+$/,"");
+    if(valor.length<3||valor.length>70||/[\n\r]/.test(valor)) return;
+    if(!txt.includes(valor)) return;
+    if(/^\{\{|\}\}$/.test(valor)) return;
+    if(out.some(s=>s.valor===valor)) return;
+    out.push({valor,etiqueta:(etiqueta||tipo).slice(0,40),tipo,pos:txt.indexOf(valor)});
+  };
+  /* 1) líneas del tipo "Etiqueta: valor" — dan el mejor nombre */
+  let m; const reL=/^[ \t]*([A-Za-zÁÉÍÓÚÑáéíóúñ][^:\n]{2,40}):[ \t]*([^\n]{2,60})$/gm;
+  while((m=reL.exec(txt))){
+    const v=m[2].trim();
+    if(v.split(/\s+/).length>8) continue;
+    meter(v, m[1].trim().replace(/\s+/g," "), "Dato");
+  }
+  /* 2) datos con forma reconocible */
+  const p1=(txt.trim().split("\n")[0]||"").trim(), titulo=p1.length<=60?p1:"";
+  SUG_PAT.forEach(p=>{
+    let x; p.re.lastIndex=0;
+    while((x=p.re.exec(txt))){
+      let v=x[0].trim();
+      if(p.may){
+        if(titulo&&titulo.includes(v)) continue;        /* el título del documento no es un dato */
+        if(p.ini){                                     /* si abre la frase, suelta el verbo inicial */
+          const antes=txt.slice(0,x.index).replace(/[ \t]+$/,"");
+          if(!antes||/[.\n:¿¡—-]$/.test(antes)){
+            const c=v.match(/^\S+\s+(?:de|del|la|los|las|y)\s+(.+)$/i);
+            if(c&&/^[A-ZÁÉÍÓÚÑ]/.test(c[1])&&c[1].split(/\s+/).length>=2) v=c[1];
+          }
+        }
+        const toks=v.split(/\s+/).filter(w=>!SUG_STOP.test(sinTildes(w.replace(/[.,;:&]/g,""))));
+        if(toks.length<2) continue;
+      }
+      meter(v, etiquetaCercana(txt,x.index,p.t), p.t);
+    }
+  });
+  /* 3) fuera los que están contenidos dentro de otro candidato */
+  return out.filter(s=>!out.some(o=>o!==s&&o.valor.includes(s.valor)))
+            .sort((a,b)=>a.pos-b.pos).slice(0,24);
+}
+function etiquetaLibre(et){
+  if(!S.campos.some(f=>f.etiqueta===et)) return et;
+  let i=2; while(S.campos.some(f=>f.etiqueta===et+" "+i)) i++;
+  return et+" "+i;
+}
+function claveLibre(et,excepto){      /* `excepto` = el campo que se está renombrando */
+  const base=slug(et); let k=base,i=2;
+  while(AUTO.includes(k)||S.campos.some(f=>f!==excepto&&f.clave===k)){ k=base+"_"+i; i++; }
+  return k;
+}
+function agregarSug(i,callado){
+  const s=SUG[i]; if(!s) return false;
+  if(!S.doc.cuerpo.includes(s.valor)){
+    SUG.splice(i,1); renderSug();
+    if(!callado) toast("Ese dato ya no está en el texto");
+    return false;
+  }
+  const r=nuevoCampo(s.valor, s.etiqueta||s.tipo||"Dato");
+  if(!r){ SUG.splice(i,1); renderSug(); return false; }
+  const veces=r.veces;
+  SUG.splice(i,1);
+  SUG=SUG.filter(x=>S.doc.cuerpo.includes(x.valor));
+  pintarTodo(); renderSug();
+  if(!callado) toast(veces>1?`Campo creado y reemplazado en ${veces} lugares`:"Campo creado");
+  return true;
+}
+function renderSug(){
+  const box=$("#sugLista");
+  box.innerHTML="";
+  if(!SUG.length){ $("#sugBox").hidden=true; aplicarModo(); return; }
+  $("#sugBox").hidden=false; aplicarModo();
+  SUG.forEach((s,i)=>{
+    const el=document.createElement("div"); el.className="sug";
+    el.innerHTML=`<span class="sugval" title="${esc(s.valor)}">${esc(s.valor)}</span>
+      <span class="suget" title="${esc(s.etiqueta)}">${esc(s.etiqueta)}</span>
+      <button class="btn sm" data-add="1">+ campo</button>
+      <button class="btn sm icon" data-no="1" title="Descartar">✕</button>`;
+    el.querySelector("[data-add]").onclick=()=>agregarSug(i);
+    el.querySelector("[data-no]").onclick=()=>{ SUG.splice(i,1); renderSug(); };
+    box.appendChild(el);
+  });
+}
+$("#btnSugTodos").onclick=()=>{
+  let n=0, guarda=0;
+  while(SUG.length && guarda++<40){ if(agregarSug(0,true)) n++; }
+  toast(n? `${n} campo${n>1?"s":""} creado${n>1?"s":""}` : "No quedaba nada por agregar");
+};
+$("#btnSugCerrar").onclick=()=>{ SUG=[]; renderSug(); };
+
+/* ---- subir PDF: pdf.js se carga solo al primer uso ---- */
+const PDFJS_CDN="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+let pdfjsCarga=null;
+function cargarPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(pdfjsCarga) return pdfjsCarga;
+  pdfjsCarga=new Promise((ok,mal)=>{
+    const s=document.createElement("script");
+    s.src=PDFJS_CDN+"pdf.min.js";
+    s.onload=()=>{ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_CDN+"pdf.worker.min.js"; ok(window.pdfjsLib); };
+    s.onerror=()=>{ pdfjsCarga=null; mal(new Error("pdf.js no cargó")); };
+    document.head.appendChild(s);
+  });
+  return pdfjsCarga;
+}
+async function leerPdf(file){
+  const lib=await cargarPdfJs();
+  const bytes=await file.arrayBuffer();
+  const pdf=await lib.getDocument({data:bytes.slice(0)}).promise;
+  const paginas=[];
+  for(let n=1;n<=pdf.numPages;n++){
+    const pagina=await pdf.getPage(n);
+    const vp=pagina.getViewport({scale:1});
+    const cont=await pagina.getTextContent();
+    const items=cont.items, estilos=cont.styles||{};
+    /* 1) cada fragmento con su posición; se agrupan en líneas por la vertical */
+    const its=[], L=[], gir_cajas=[]; let yPrev=null;
+    let rotados=0;
+    items.forEach(it=>{
+      if(!it.str) return;
+      /* Texto girado (marcas de agua, sellos verticales): las líneas se agrupan por
+         la vertical, así que mezclarlo con el texto normal descoloca los renglones y
+         los offsets. Se descarta: no se puede editar, pero el original queda intacto
+         en la salida, que es lo que importa. */
+      const t=it.transform, gir=Math.abs(t[1])>Math.abs(t[0])*0.08 || Math.abs(t[2])>Math.abs(t[3])*0.08;
+      if(gir){
+        rotados++;
+        /* fuera del lector, pero se guarda su caja: el recuadro que tapa un dato
+           tiene que esquivarla o le borra un trozo a la marca de agua */
+        const ha=Math.hypot(t[0],t[1])||1, hb=Math.hypot(t[2],t[3])||1;
+        const aw=it.width||0, ah=it.height||Math.abs(t[3])||10;
+        const dx=t[0]/ha*aw, dy=t[1]/ha*aw, ux=t[2]/hb*ah, uy=t[3]/hb*ah;
+        const xs=[t[4],t[4]+dx,t[4]+ux,t[4]+dx+ux], ys=[t[5],t[5]+dy,t[5]+uy,t[5]+dy+uy];
+        gir_cajas.push({x0:Math.min(...xs),x1:Math.max(...xs),y0:Math.min(...ys),y1:Math.max(...ys)});
+        return;
+      }
+      const x=it.transform[4], y=it.transform[5], w=it.width||0;
+      const h=it.height||Math.abs(it.transform[3])||10;
+      const k=its.push({str:it.str,x,y,w,h,font:it.fontName})-1;
+      if(yPrev===null||Math.abs(y-yPrev)>3) L.push({y,izq:x,der:x+w,idx:[k]});
+      else { const l=L[L.length-1]; l.idx.push(k); l.der=Math.max(l.der,x+w); }
+      yPrev=y;
+    });
+    if(rotados) console.info(`página ${n}: ${rotados} fragmentos girados omitidos del lector`);
+    if(!L.length){ continue; }
+    /* 2) hueco vertical normal = línea seguida; uno mayor = párrafo nuevo */
+    const huecos=[];
+    for(let i=1;i<L.length;i++){ const d=L[i-1].y-L[i].y; if(d>0) huecos.push(d); }
+    huecos.sort((a,b)=>a-b);
+    const base=huecos.length>2?huecos[Math.floor(huecos.length*0.25)]:0;
+    /* 3) si la línea llegaba al borde derecho, venía cortada por el ancho: se reúne */
+    const bordeDer=Math.max(...L.map(l=>l.der)), bordeIzq=Math.min(...L.map(l=>l.izq));
+    const tol=Math.max(6,(bordeDer-bordeIzq)*0.05);
+    const reunir=L.length>=3 && (bordeDer-bordeIzq)>vp.width*0.5;
+    /* 4) texto de la página + mapa de cada fragmento dentro de ese texto */
+    let texto=""; const mapa=[];
+    L.forEach((l,i)=>{
+      if(i){
+        const g=L[i-1].y-l.y;
+        texto += (base&&g>base*1.6)? "\n\n" : (reunir&&L[i-1].der>=bordeDer-tol)? " " : "\n";
+      }
+      l.idx.forEach((k,j)=>{
+        let t=its[k].str;
+        if(j===l.idx.length-1) t=t.replace(/\s+$/,"");
+        if(!t) return;
+        mapa.push({it:k,tIni:texto.length,tFin:texto.length+t.length});
+        texto+=t;
+      });
+    });
+    if(!texto.trim()) continue;
+    paginas.push({num:n, ancho:vp.width, alto:vp.height, texto, items:its, mapa, estilos, girados:gir_cajas});
+  }
+  return {bytes, paginas, texto:paginas.map(p=>p.texto).join("\n\n")};
+}
+$("#btnSubirPdf").onclick=()=>$("#filePdf").click();
+async function procesarPdf(f){
+  if(!f) return;
+  const btn=$("#btnSubirPdf"), etq=btn.textContent;
+  const b2=$("#btnInicioPdf"), etq2=b2?b2.textContent:"";
+  btn.disabled=true; btn.textContent="Leyendo…";
+  if(b2){ b2.disabled=true; b2.textContent="Leyendo…"; }
+  try{
+    const r=await leerPdf(f);
+    if(!r.texto.trim()){ toast("Ese PDF no tiene texto seleccionable: copia y pega el texto a mano"); return; }
+    $("#imp_texto").value=r.texto;
+    DOC_PEND=r;
+    const x=usarTexto(1);
+    toast(x? `PDF cargado: ${r.paginas.length} página${r.paginas.length>1?"s":""}${x.s?`, ${x.s} valores detectados`:""}` : "PDF cargado");
+    if(DOC){                                     /* entra al modo calcado y dibuja la vista previa real */
+      if(MODO==="inicio") AVANZADO=false;
+      MODO="pdf"; $("#salidaIgual").checked=true;
+      aplicarModo(); ajustar();
+      await prepararCalcado();
+    }
+  }catch(err){
+    console.error(err);
+    toast("No pude leer el PDF. Revisa la conexión e intenta de nuevo");
+  }finally{
+    btn.disabled=false; btn.textContent=etq;
+    if(b2){ b2.disabled=false; b2.textContent=etq2; }
+  }
+}
+$("#filePdf").addEventListener("change",async e=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  await procesarPdf(f);
+});
+$("#btnSelCampo").onclick=()=>{
+  const ta=$("#d_cuerpo");
+  hacerCampoDe(ta.value.slice(ta.selectionStart,ta.selectionEnd));
+};
+
+/* ============ dónde se guarda ============
+   window.storage solo existe dentro de un artifact de Claude. Con el archivo abierto
+   suelto no está, así que se prueba IndexedDB y luego localStorage. Si nada sirve,
+   los proyectos se guardan como archivo descargado. localStorage NUNCA se toca
+   cuando window.storage existe, que es la regla del entorno de artifacts. */
+let ALM_TIPO=null, ALM_DB=null;
+async function almInit(){
+  if(ALM_TIPO) return ALM_TIPO;
+  if(typeof window!=="undefined" && window.storage){ ALM_TIPO="artifact"; return ALM_TIPO; }
+  try{
+    if(typeof indexedDB!=="undefined" && indexedDB){
+      ALM_DB=await new Promise((ok,mal)=>{
+        const r=indexedDB.open("papeleria",1);
+        r.onupgradeneeded=()=>{ try{ r.result.createObjectStore("kv"); }catch(_){} };
+        r.onsuccess=()=>ok(r.result);
+        r.onerror=()=>mal(r.error||new Error("idb"));
+        r.onblocked=()=>mal(new Error("idb bloqueada"));
+        setTimeout(()=>mal(new Error("idb sin respuesta")),4000);
+      });
+      ALM_TIPO="idb"; return ALM_TIPO;
+    }
+  }catch(_){ ALM_DB=null; }
+  try{
+    localStorage.setItem("papeleria:__t","1"); localStorage.removeItem("papeleria:__t");
+    ALM_TIPO="local"; return ALM_TIPO;
+  }catch(_){}
+  ALM_TIPO="ninguno"; return ALM_TIPO;
+}
+function idbOp(modo,fn){
+  return new Promise((ok,mal)=>{
+    let r;
+    try{ const tx=ALM_DB.transaction("kv",modo); r=fn(tx.objectStore("kv"));
+         tx.oncomplete=()=>ok(r?r.result:null); tx.onerror=()=>mal(tx.error);
+    }catch(e){ mal(e); }
+  });
+}
+async function almGet(k){
+  const t=await almInit();
+  try{
+    if(t==="artifact") return await window.storage.get(k);
+    if(t==="idb"){ const v=await idbOp("readonly",st=>st.get(k)); return v==null?null:{key:k,value:v}; }
+    if(t==="local"){ const v=localStorage.getItem(k); return v==null?null:{key:k,value:v}; }
+  }catch(_){}
+  return null;
+}
+async function almSet(k,v){
+  const t=await almInit(); v=String(v);
+  if(t==="artifact") return window.storage.set(k,v);
+  if(t==="idb") return idbOp("readwrite",st=>st.put(v,k));
+  if(t==="local") return localStorage.setItem(k,v);
+  throw new Error("sin almacenamiento");
+}
+async function almDel(k){
+  const t=await almInit();
+  try{
+    if(t==="artifact") return await window.storage.delete(k);
+    if(t==="idb") return await idbOp("readwrite",st=>st.delete(k));
+    if(t==="local") return localStorage.removeItem(k);
+  }catch(_){}
+}
+
+/* ============ plantillas guardadas ============ */
+const KEY="papeleria:plantillas";
+async function leerGuardadas(){ try{ const r=await almGet(KEY); return r?JSON.parse(r.value):{}; }catch(_){ return {}; } }
+async function refrescarLista(){
+  const sel=$("#misPlantillas"), ok=(await almInit())!=="ninguno";
+  if(!ok){
+    sel.innerHTML='<option>No disponible aquí — usa Exportar .json</option>';
+    sel.disabled=$("#btnCargarMia").disabled=$("#btnBorrarMia").disabled=true;
+    return;
+  }
+  const g=await leerGuardadas(), nom=Object.keys(g);
+  sel.disabled=$("#btnCargarMia").disabled=$("#btnBorrarMia").disabled=!nom.length;
+  sel.innerHTML = nom.length ? nom.map(n=>`<option>${esc(n)}</option>`).join("")
+                             : '<option>Aún no has guardado ninguna</option>';
+}
+$("#btnGuardar").onclick=async()=>{
+  if((await almInit())==="ninguno"){ toast("Guardado no disponible aquí: usa Exportar .json"); return; }
+  const n=await askText("Nombre para esta plantilla", S.doc.titulo||"Mi formato"); if(!n) return;
+  try{ const g=await leerGuardadas(); g[n]=S; await almSet(KEY,JSON.stringify(g)); await refrescarLista(); toast("Plantilla guardada"); }
+  catch(_){ toast("No se pudo guardar: usa Exportar .json"); }
+};
+$("#btnCargarMia").onclick=async()=>{
+  const g=await leerGuardadas(), n=$("#misPlantillas").value;
+  if(g[n]){ S={...S,...g[n]}; S.campos=(g[n].campos||[]).map(x=>({...x,id:uid()})); PAGS=null; soltarPdf(); SUG=[]; renderSug(); pintarTodo(); toast("Plantilla cargada"); }
+};
+$("#btnBorrarMia").onclick=async()=>{
+  const g=await leerGuardadas(), n=$("#misPlantillas").value; if(!g[n]) return;
+  delete g[n]; try{ await almSet(KEY,JSON.stringify(g)); }catch(_){}
+  await refrescarLista(); toast("Plantilla eliminada");
+};
+
+/* ============ modos de la interfaz ============
+   inicio = pantalla de bienvenida · pdf = calcar un PDF · libre = la plantilla propia de siempre.
+   En modo pdf se ocultan las secciones que no tocan la salida; siguen ahí, se ven con "avanzado". */
+let MODO="inicio", AVANZADO=false;
+const SECS_PROPIAS=["#secPlantilla","#secEmisor","#secEncabezado","#secCuerpo","#secItems","#secFirma"];
+const PARTES_PEGAR=["#hintPegar","#imp_texto","#rowImportar","#hintMarcadores"];
+
+function aplicarModo(){
+  const enPdf  = (MODO==="pdf") && !!DOC;
+  const simple = enPdf && !AVANZADO;
+
+  $("#app").hidden    = (MODO==="inicio");
+  $("#inicio").hidden = (MODO!=="inicio");
+
+  SECS_PROPIAS.forEach(s=>{ const el=$(s); if(el) el.hidden=simple; });
+  PARTES_PEGAR.forEach(s=>{ const el=$(s); if(el) el.hidden=simple; });
+
+  const si=$("#secImportar");
+  if(si) si.hidden = simple;                /* con PDF no se proponen valores: se eligen a mano */
+  /* la casilla del bloque de datos no hace nada cuando la salida es el PDF calcado */
+  document.querySelectorAll(".solobloque").forEach(el=>{ el.hidden=simple; });
+  const hc=$("#hintCampos");
+  if(hc) hc.textContent = enPdf
+    ? "Escribe el valor nuevo de cada dato. El que dejes igual, sale igual."
+    : "Cada campo genera un marcador. Toca el marcador para copiarlo al cuerpo del documento.";
+
+  $("#btnHtml").hidden        = simple;
+  $("#btnInicio").hidden      = (MODO==="inicio");
+  $("#btnAvanzado").hidden    = (MODO==="inicio");
+  $("#btnGuardarProy").hidden = !enPdf;
+  rotuloGuardar();
+  $("#btnSeguir").hidden = !(MODO==="inicio" && DOC);
+  $("#btnAvanzado").style.opacity = AVANZADO? 1 : .5;
+  $("#btnPdf").textContent    = simple? "Exportar PDF" : "Descargar PDF";
+
+  const wi=$("#wrapIgual");                 /* renderLector() la muestra; en simple se vuelve a ocultar */
+  if(wi) wi.hidden = simple || !DOC;
+
+  if(typeof pintarSolo==="function") pintarSolo();
+
+  const calcando = enPdf && $("#salidaIgual").checked;
+  $("#calcado").hidden  = !calcando;
+  $("#wrapHoja").hidden = calcando;
+}
+
+/* ============ vista previa calcada ============
+   Cada página se dibuja UNA vez en un lienzo base; al escribir solo se copia
+   ese base y se repintan los tramos, que es lo que la hace barata. */
+const ESC_PREV=1.5, MAX_PREV=15;
+let CALC={pags:[],listo:false,token:0}, tPrev=null;
+
+function limpiarCalcado(){
+  clearTimeout(tPrev);
+  CALC={pags:[],listo:false,token:CALC.token+1};
+  const c=$("#calcado"); if(c) c.innerHTML="";
+}
+function zoomCalcado(v){
+  const c=$("#calcado"); if(c) c.style.width=Math.max(30,Math.min(110,v||100))+"%";
+}
+async function pintarCalcado(){
+  if(!CALC.listo||!DOC) return;
+  for(let i=0;i<CALC.pags.length;i++){
+    const o=CALC.pags[i], lista=REEMP[i]||[];
+    /* la plancha solo se rehace si cambian los TRAMOS, no al teclear un valor */
+    const firma=JSON.stringify(lista.map(r=>[r.ini,r.fin]));
+    if(o.firma!==firma){
+      o.firma=firma;
+      try{ o.limpio=await planchaDe(o.page,o.vp,zonasDe(o.P,o.vp,lista)); }
+      catch(e){ console.error(e); o.limpio=null; }
+    }
+    const cx=o.vis.getContext("2d");
+    cx.clearRect(0,0,o.vis.width,o.vis.height);
+    cx.drawImage(o.limpio||o.base,0,0);
+    lista.forEach(r=>{ try{ pintarCambio(cx,o.vp,o.page,o.P,r,ESC_PREV,!!o.limpio,o.base); }catch(_){} });
+  }
+}
+function pedirPrevia(){
+  if(!CALC.listo) return;
+  clearTimeout(tPrev);
+  tPrev=setTimeout(pintarCalcado,500);
+}
+async function prepararCalcado(){
+  if(!DOC||!DOC.bytes) return;
+  const mio=++CALC.token;
+  CALC.listo=false; CALC.pags=[];
+  const cont=$("#calcado");
+  cont.innerHTML='<div class="calcnota">Dibujando la vista previa…</div>';
+  try{
+    const lib=await cargarPdfJs();
+    const pdf=await lib.getDocument({data:DOC.bytes.slice(0)}).promise;
+    const n=Math.min(DOC.paginas.length,MAX_PREV), nuevas=[];
+    for(let i=0;i<n;i++){
+      if(mio!==CALC.token) return;                       /* llegó otro PDF: abandono */
+      const P=DOC.paginas[i], page=await pdf.getPage(P.num);
+      try{ const tc=await page.getTextContent(); const fn=(tc.items.find(x=>x.fontName)||{}).fontName||"";
+           const mm=fn.match(/^(g_d\d+_)/); if(mm) page.__pref=mm[1]; }catch(_){}
+      const vp=page.getViewport({scale:ESC_PREV});
+      const base=document.createElement("canvas");
+      base.width=Math.ceil(vp.width); base.height=Math.ceil(vp.height);
+      const bx=base.getContext("2d");
+      bx.fillStyle="#fff"; bx.fillRect(0,0,base.width,base.height);
+      await page.render({canvasContext:bx,viewport:vp}).promise;
+      const vis=document.createElement("canvas");
+      vis.width=base.width; vis.height=base.height;
+      nuevas.push({P,page,vp,base,vis});
+    }
+    if(mio!==CALC.token) return;
+    cont.innerHTML="";
+    nuevas.forEach(o=>cont.appendChild(o.vis));
+    if(DOC.paginas.length>MAX_PREV){
+      const av=document.createElement("div"); av.className="calcnota";
+      av.textContent=`Vista previa de las primeras ${MAX_PREV} páginas. Al exportar salen las ${DOC.paginas.length}.`;
+      cont.appendChild(av);
+    }
+    CALC.pags=nuevas; CALC.listo=true;
+    pintarCalcado(); zoomCalcado(+$("#zoom").value);
+  }catch(e){
+    console.error(e);
+    if(mio===CALC.token) cont.innerHTML='<div class="calcnota">No pude dibujar la vista previa.<br>La exportación sigue funcionando igual.</div>';
+  }
+}
+
+/* ============ proyectos guardados ============ */
+const KEY_PROY="papeleria:proyectos", LIM_B64=4400000;
+let PROY_PEND=null;
+
+function fnv(h,n){ h^=n; return Math.imul(h,0x01000193)>>>0; }
+function huellaBytes(buf){
+  const a=new Uint8Array(buf); let h=0x811c9dc5;
+  for(let i=0;i<a.length;i++) h=fnv(h,a[i]);
+  return a.length.toString(36)+"-"+h.toString(36);
+}
+function huellaTexto(t){
+  t=String(t); let h=0x811c9dc5;
+  for(let i=0;i<t.length;i++) h=fnv(h,t.charCodeAt(i));
+  return t.length.toString(36)+"-"+h.toString(36);
+}
+function b64De(buf){
+  const a=new Uint8Array(buf); let s="";
+  for(let i=0;i<a.length;i+=0x8000) s+=String.fromCharCode.apply(null,a.subarray(i,i+0x8000));
+  return btoa(s);
+}
+function deB64(s){
+  const b=atob(s), a=new Uint8Array(b.length);
+  for(let i=0;i<b.length;i++) a[i]=b.charCodeAt(i);
+  return a.buffer;
+}
+const claveProy=n=>"papeleria:proy:"+slug(n)+"-"+huellaTexto(n).split("-")[1];
+
+async function leerProyectos(){
+  try{ const r=await almGet(KEY_PROY); return r?JSON.parse(r.value):{}; }catch(_){ return {}; }
+}
+/* Todo lo que hace falta para retomar el trabajo: los campos, dónde va cada uno
+   dentro del PDF (REEMP), la huella para comprobar que es el mismo archivo, y el
+   PDF mismo si cabe. Es lo que se guarda y también lo que se descarga. */
+function paqueteProyecto(n,limite){
+  if(PDF_B64===null){ try{ PDF_B64=b64De(DOC.bytes); }catch(_){ PDF_B64=""; } }
+  const b64=(PDF_B64 && PDF_B64.length<=limite)? PDF_B64 : null;
+  return {v:1, nombre:n, S, REEMP,
+    huella:huellaBytes(DOC.bytes),
+    huellaTx:huellaTexto(DOC.paginas.map(p=>p.texto).join("\n\n")),
+    paginas:DOC.paginas.length, pdf:b64, fecha:new Date().toISOString()};
+}
+function bajarProyecto(n){
+  const d=paqueteProyecto(n,20000000);      /* en archivo no hay tope de 5 MB */
+  bajar((slug(n)||"proyecto")+".proyecto.json", JSON.stringify(d), "application/json");
+  toast(d.pdf? "Proyecto descargado con su PDF adentro. Ábrelo desde la pantalla de inicio"
+             : "Proyecto descargado. Al abrirlo te pediré el PDF");
+  return d;
+}
+async function guardarProyecto(){
+  if(!DOC){ toast("Primero sube un PDF"); return; }
+  let n=PROY_ACT? PROY_ACT.nombre : null;
+  if(!n){
+    const sug=(S.doc.titulo||(DOC.paginas[0].texto.split("\n")[0]||"").trim().slice(0,40)||"Mi documento");
+    n=await askText("Nombre para este proyecto",sug); if(!n) return;
+  }
+  const btn=$("#btnGuardarProy");
+  btn.disabled=true; btn.textContent="Guardando…";
+  try{
+    if((await almInit())==="ninguno"){ bajarProyecto(n); return; }
+    const k=claveProy(n), dato=paqueteProyecto(n,LIM_B64);
+    await almSet(k,JSON.stringify(dato));
+    const ix=await leerProyectos();
+    ix[n]={k,paginas:DOC.paginas.length,conPdf:!!dato.pdf,fecha:dato.fecha};
+    await almSet(KEY_PROY,JSON.stringify(ix));
+    PROY_ACT={nombre:n,k};
+    await renderProyectos();
+    toast(dato.pdf? "Proyecto guardado. Los cambios que hagas se guardan solos"
+                  : "Proyecto guardado. El PDF pesa mucho: te lo pediré al abrirlo");
+  }catch(e){
+    console.error(e);
+    toast("Aquí no pude guardarlo: te lo descargo como archivo");
+    try{ bajarProyecto(n); }catch(_){ toast("No se pudo guardar el proyecto"); }
+  }
+  finally{ btn.disabled=false; rotuloGuardar(); }
+}
+/* ---- autoguardado: solo sobre un proyecto ya nombrado, y nunca descarga solo ---- */
+function rotuloGuardar(txt){
+  const b=$("#btnGuardarProy"); if(!b||b.disabled) return;
+  b.textContent = txt || (PROY_ACT? "Guardar cambios" : "Guardar proyecto");
+  if(txt){ clearTimeout(b.__t); b.__t=setTimeout(()=>rotuloGuardar(),1500); }
+}
+async function guardarAuto(){
+  clearTimeout(tAuto); tAuto=null;
+  if(!PROY_ACT||!DOC||CARGANDO) return false;
+  if((await almInit())==="ninguno") return false;
+  try{
+    const dato=paqueteProyecto(PROY_ACT.nombre,LIM_B64);
+    await almSet(PROY_ACT.k,JSON.stringify(dato));
+    const ix=await leerProyectos();
+    ix[PROY_ACT.nombre]={k:PROY_ACT.k,paginas:DOC.paginas.length,conPdf:!!dato.pdf,fecha:dato.fecha};
+    await almSet(KEY_PROY,JSON.stringify(ix));
+    rotuloGuardar("Guardado ✓");
+    return true;
+  }catch(e){ console.error(e); return false; }
+}
+function tocado(){
+  if(!PROY_ACT||CARGANDO) return;
+  clearTimeout(tAuto);
+  tAuto=setTimeout(guardarAuto,1200);
+}
+async function montarProyecto(d,bytes,ref){
+  CARGANDO=true;
+  if(d.huella && huellaBytes(bytes)!==d.huella){ CARGANDO=false; toast("Ese no es el mismo PDF de este proyecto"); return; }
+  try{
+    const r=await leerPdf({arrayBuffer:()=>Promise.resolve(bytes)});
+    if(d.huellaTx && huellaTexto(r.paginas.map(p=>p.texto).join("\n\n"))!==d.huellaTx){
+      CARGANDO=false; toast("El PDF no coincide con lo guardado: no apliqué nada"); return;
+    }
+    soltarPdf(); limpiarCalcado();
+    DOC=r;
+    REEMP=DOC.paginas.map((p,i)=>{
+      const l=(d.REEMP&&d.REEMP[i])||[];
+      return l.filter(x=>x&&x.clave&&x.ini>=0&&x.fin<=p.texto.length&&x.fin>x.ini).map(x=>({ini:x.ini,fin:x.fin,clave:x.clave}));
+    });
+    S={...S,...(d.S||{})};
+    S.campos=((d.S&&d.S.campos)||[]).map(x=>({...x,id:uid()}));
+    sincronizar();
+    SUG=[]; MODO="pdf";
+    $("#salidaIgual").checked=true;
+    pintarTodo(); renderSug(); ajustar();
+    await prepararCalcado();
+    PROY_ACT = ref || (d.nombre? {nombre:d.nombre,k:claveProy(d.nombre)} : null);
+    rotuloGuardar();
+    toast(PROY_ACT? "Proyecto abierto. Los cambios se guardan solos" : "Proyecto abierto");
+  }catch(e){ console.error(e); toast("No pude abrir ese proyecto"); }
+  finally{ CARGANDO=false; }
+}
+async function abrirProyecto(nombre){
+  const ix=await leerProyectos(), meta=ix[nombre];
+  if(!meta){ toast("Ese proyecto ya no está"); return; }
+  let d=null;
+  try{ const r=await almGet(meta.k); d=r?JSON.parse(r.value):null; }catch(_){}
+  if(!d){ toast("No encontré los datos de ese proyecto"); return; }
+  if(d.pdf){ await montarProyecto(d,deB64(d.pdf),{nombre,k:meta.k}); return; }
+  PROY_PEND={...d,__ref:{nombre,k:meta.k}}; toast("Elige otra vez el PDF de este proyecto");
+  $("#fileProy").click();
+}
+async function renderProyectos(){
+  const box=$("#proys"); if(!box) return;
+  if((await almInit())==="ninguno"){
+    box.innerHTML='<div class="hint">Este navegador no me deja guardar aquí. Usa <b>Guardar proyecto</b>: te lo descargo como archivo y lo abres con el botón de abajo.</div>';
+    return;
+  }
+  const ix=await leerProyectos(), nom=Object.keys(ix);
+  box.innerHTML="";
+  if(!nom.length){ box.innerHTML='<div class="hint">Todavía no has guardado ninguno.</div>'; return; }
+  nom.forEach(n=>{
+    const m=ix[n], el=document.createElement("div"); el.className="proy";
+    el.innerHTML=`<span class="nm">${esc(n)}</span>
+      <span class="de">${m.paginas||"?"} pág.${m.conPdf?"":" · sin PDF"}</span>
+      <button class="btn sm" data-ab="1">Abrir</button>
+      <button class="btn sm icon" data-bo="1" title="Eliminar">✕</button>`;
+    el.querySelector("[data-ab]").onclick=()=>abrirProyecto(n);
+    el.querySelector("[data-bo]").onclick=async()=>{
+      const ix2=await leerProyectos(), k=(ix2[n]||{}).k;
+      delete ix2[n];
+      try{ await almSet(KEY_PROY,JSON.stringify(ix2)); if(k) await almDel(k); }catch(_){}
+      renderProyectos(); toast("Proyecto eliminado");
+    };
+    box.appendChild(el);
+  });
+}
+$("#btnAbrirArch").onclick=()=>$("#fileProyJson").click();
+$("#fileProyJson").addEventListener("change",e=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  const r=new FileReader();
+  r.onload=async()=>{
+    let d=null; try{ d=JSON.parse(r.result); }catch(_){}
+    if(!d||!d.S||!Array.isArray(d.REEMP)){ toast("Ese archivo no es un proyecto de esta app"); return; }
+    if(d.pdf){ await montarProyecto(d,deB64(d.pdf)); return; }
+    PROY_PEND=d; toast("Ahora elige el PDF de este proyecto");
+    $("#fileProy").click();
+  };
+  r.readAsText(f);
+});
+$("#fileProy").addEventListener("change",async e=>{
+  const f=e.target.files[0]; e.target.value="";
+  const d=PROY_PEND; PROY_PEND=null;
+  if(!f||!d) return;
+  await montarProyecto(d,await f.arrayBuffer(),d.__ref);
+});
+
+/* ============ interruptor "solo esta aparición" ============
+   El botón es la cara visible; #soloAqui sigue siendo la fuente de verdad que leen
+   hacerCampoDe() y usarCampoAqui(), así que esa lógica no se tocó. */
+function pintarSolo(){
+  const b=$("#btnSolo"), c=$("#soloAqui"), h=$("#hintSolo");
+  if(!b||!c) return;
+  b.classList.toggle("on",c.checked);
+  b.setAttribute("aria-pressed",c.checked?"true":"false");
+  if(h) h.innerHTML = c.checked
+    ? "Se cambiará <b>solo la que marcaste</b>. El mismo texto en otros sitios se queda igual."
+    : "Se cambiarán <b>todas las iguales</b> del documento, en todas las páginas.";
+}
+$("#btnSolo").onclick=()=>{
+  const c=$("#soloAqui"); c.checked=!c.checked; pintarSolo();
+  toast(c.checked? "Solo esta aparición" : "Todas las apariciones iguales");
+};
+pintarSolo();
+
+/* ============ navegación entre modos ============ */
+async function irAInicio(){
+  if(tAuto) await guardarAuto();          /* no salir con cambios sin guardar */
+  MODO="inicio"; aplicarModo(); await renderProyectos();
+}
+$("#btnInicio").onclick=irAInicio;
+$("#btnSeguir").onclick=()=>{ if(!DOC) return; MODO="pdf"; aplicarModo(); ajustar(); };
+$("#btnInicioPdf").onclick=()=>$("#filePdf").click();
+$("#btnGuardarProy").onclick=guardarProyecto;
+$("#btnAvanzado").onclick=()=>{
+  AVANZADO=!AVANZADO; aplicarModo();
+  toast(AVANZADO? "Se ven todas las secciones" : "Vista simple");
+};
+$("#btnModoLibre").onclick=()=>{
+  MODO="libre"; AVANZADO=true;
+  if(!S.doc.cuerpo.trim() && !S.campos.length) cargarPreset("blanco");
+  aplicarModo(); ajustar();
+};
+(function montarSuelta(){
+  const z=$("#suelta"); if(!z) return;
+  ["dragenter","dragover"].forEach(ev=>z.addEventListener(ev,e=>{ e.preventDefault(); z.classList.add("hot"); }));
+  ["dragleave","dragend"].forEach(ev=>z.addEventListener(ev,e=>{ e.preventDefault(); z.classList.remove("hot"); }));
+  z.addEventListener("drop",e=>{
+    e.preventDefault(); z.classList.remove("hot");
+    const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+    if(!f) return;
+    if(!/\.pdf$/i.test(f.name)){ toast("Tiene que ser un archivo PDF"); return; }
+    procesarPdf(f);
+  });
+})();
+
+/* ============ arranque ============ */
+pintarTodo();
+ajustar();
+refrescarLista();
+irAInicio();
+</script>
+</body>
+</html>
