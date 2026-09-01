@@ -184,7 +184,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
 .suelta .big{font-size:15px;font-weight:600}
 .pasos{display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--mut)}
 .paso{display:flex;gap:11px;align-items:flex-start;line-height:1.55}
-.paso b{display:flex;align-items:center;justify-content:center;width:21px;height:21px;flex-shrink:0;
+.paso > b{display:flex;align-items:center;justify-content:center;width:21px;height:21px;flex-shrink:0;
   border-radius:50%;background:var(--acc-soft);color:var(--acc);font-size:11px;font-family:var(--mono);margin-top:1px}
 .proys{display:flex;flex-direction:column;gap:8px}
 .proy{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
@@ -242,7 +242,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
     </div>
 
     <div class="pasos">
-      <div class="paso"><b>1</b><span>Subes el PDF. La app lee el texto y te propone sola los datos que suelen cambiar.</span></div>
+      <div class="paso"><b>1</b><span>Subes el PDF. La app lee el texto y lo deja listo para que marques los datos.</span></div>
       <div class="paso"><b>2</b><span>Escribes los valores nuevos. Si falta alguno, tocas la palabra en el texto y la vuelves campo.</span></div>
       <div class="paso"><b>3</b><span>Exportas. Se abre la ventana de impresión y eliges <b>Guardar como PDF</b>.</span></div>
     </div>
@@ -1822,7 +1822,15 @@ async function procesarPdf(f){
   if(b2){ b2.disabled=true; b2.textContent="Leyendo…"; }
   try{
     const r=await leerPdf(f);
-    if(!r.texto.trim()){ toast("Ese PDF no tiene texto seleccionable: copia y pega el texto a mano"); return; }
+    if(!r.texto.trim()){
+      /* la salida calcada de esta app es raster: no tiene capa de texto. Quien
+         sube su propio PDF exportado necesita abrir su proyecto, no pegar texto. */
+      let hay=0; try{ hay=Object.keys(await leerProyectos()).length; }catch(_){}
+      toast(hay || (typeof NUBE!=="undefined" && NUBE.length)
+        ? "Ese PDF es una imagen. Si lo exportaste aquí, abre tu proyecto guardado en vez de subirlo"
+        : "Ese PDF no tiene texto seleccionable: copia y pega el texto a mano");
+      return;
+    }
     $("#imp_texto").value=r.texto;
     DOC_PEND=r;
     const x=usarTexto(1);
@@ -2378,9 +2386,11 @@ function nubeUI(){
   window.FB.alCambiar(u=>{
     USUARIO=u||null;
     be.hidden=!!u; bs.hidden=!u;
-    es.textContent = u ? `Sesión: ${u.email}` : "Entra con Google para guardar tus proyectos en la nube.";
+    if(typeof estadoNubeUI==="function") estadoNubeUI();
+    else es.textContent = u ? `Sesión: ${u.email}` : "Entra con Google para guardar tus proyectos en la nube.";
     if(typeof renderNube==="function") renderNube();
     if(typeof aplicarModo==="function") aplicarModo();
+    if(typeof sincronizarNube==="function") sincronizarNube();
   });
   const bn=$("#btnNube"); if(bn) bn.onclick=async()=>{ if(await nubeSubir()) renderNube(); };
   be.onclick=async()=>{
@@ -2399,14 +2409,72 @@ window.addEventListener("fb-listo", nubeUI);
    proyectos/{uid}/{id}/doc.pdf. El documento guarda el resto y la lista de
    invitados. Todavía sin cola de pendientes: eso es la 2b. */
 let NUBE=[];
-const idNube=n=>slug(n)+"-"+huellaTexto(n).split("-")[1];
+/* El id NO se deriva del nombre. Si lo hiciera, renombrar crearía un proyecto
+   nuevo y dejaría el viejo huérfano en Firestore con su PDF ocupando Storage.
+   Se genera una vez, se guarda con el proyecto y no cambia nunca. */
+const nuevoIdNube=()=>"p"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 function hayNube(){ return !!(window.FB && USUARIO); }
+function enLinea(){ return navigator.onLine!==false; }
+
+/* ---- cola de pendientes: lo que no pudo subir se reintenta al volver la red ---- */
+const KEY_COLA="papeleria:cola";
+async function leerCola(){
+  /* almGet devuelve {key,value}, no la cadena suelta: hay que leer .value */
+  try{ const r=await almGet(KEY_COLA); return r?JSON.parse(r.value):[]; }catch(_){ return []; }
+}
+async function encolar(id){
+  const c=await leerCola(); if(c.includes(id)) return;
+  c.push(id); try{ await almSet(KEY_COLA,JSON.stringify(c)); }catch(_){}
+  estadoNubeUI();
+}
+async function desencolar(id){
+  const c=(await leerCola()).filter(x=>x!==id);
+  try{ await almSet(KEY_COLA,JSON.stringify(c)); }catch(_){}
+  estadoNubeUI();
+}
+async function estadoNubeUI(){
+  const es=$("#estadoNube"); if(!es) return;
+  if(!window.FB){ es.textContent="Sin nube: tus proyectos se guardan solo en este navegador."; return; }
+  if(!USUARIO){ es.textContent="Entra con Google para guardar tus proyectos en la nube."; return; }
+  const c=await leerCola();
+  if(!enLinea()){
+    es.textContent = c.length
+      ? `Sin conexión · ${c.length} pendiente${c.length>1?"s":""}. Se sincronizará cuando vuelva el internet.`
+      : "Sin conexión. Se sincronizará cuando vuelva el internet.";
+    return;
+  }
+  es.textContent = c.length
+    ? `${USUARIO.email} · ${c.length} pendiente${c.length>1?"s":""} por subir`
+    : `Sesión: ${USUARIO.email}`;
+}
+
+/* ---- nombre e id: se piden una vez y viven en el índice local ---- */
+async function idDeProyecto(nombre){
+  const ix=await leerProyectos();
+  return (ix[nombre]&&ix[nombre].idNube)||null;
+}
+async function fijarIdProyecto(nombre,id,paginas){
+  try{
+    const ix=await leerProyectos();
+    ix[nombre]=Object.assign({},ix[nombre]||{},{idNube:id,paginas:paginas,fecha:new Date().toISOString()});
+    await almSet(KEY_PROY,JSON.stringify(ix));
+  }catch(_){}
+}
 
 async function nubeSubir(){
   if(!hayNube()){ toast("Entra con Google para usar la nube"); return false; }
   if(!DOC){ toast("Abre primero un PDF"); return false; }
-  const n=(PROY_ACT&&PROY_ACT.nombre) || S.doc.titulo || "Proyecto";
-  const id=idNube(n), b=$("#btnNube");
+
+  /* siempre con nombre propio: "Proyecto" chocaría con cualquier otro sin título */
+  let n=(PROY_ACT&&PROY_ACT.nombre)||"";
+  if(!n){
+    const sug=S.doc.titulo || (DOC.paginas[0].texto.split("\n")[0]||"").trim().slice(0,40) || "";
+    n=await askText("¿Cómo quieres llamar este proyecto?",sug);
+    if(!n) return false;
+    n=n.trim(); if(!n) return false;
+  }
+  let id=(PROY_ACT&&PROY_ACT.id) || await idDeProyecto(n) || nuevoIdNube();
+  const b=$("#btnNube");
   let paso="preparar";
   if(b){ b.disabled=true; b.textContent="Subiendo…"; }
   try{
@@ -2415,26 +2483,50 @@ async function nubeSubir(){
     /* Firestore no admite un array dentro de otro array, y REEMP es uno por
        página. Viaja como texto y se vuelve a armar al bajarlo. */
     d.REEMP=JSON.stringify(REEMP);
+    if(!enLinea()) throw new Error("offline");
     paso="subir el PDF";
     await window.FB.subirPdf(USUARIO.uid,id,DOC.bytes);
     paso="guardar los datos";
-    /* con merge, no mandar "invitados" los conserva: por eso no hace falta
-       leer antes, que era justo lo que fallaba con el documento aún inexistente */
+    /* con merge, no mandar "invitados" los conserva */
     await window.FB.guardarDoc(id,{
-      ...d, dueno:USUARIO.uid, correoDueno:USUARIO.email||"", actualizado:Date.now()
+      ...d, nombre:n, dueno:USUARIO.uid, correoDueno:USUARIO.email||"", actualizado:Date.now()
     });
-    PROY_ACT={nombre:n,k:claveProy(n)};
+    PROY_ACT={nombre:n,k:claveProy(n),id};
+    await fijarIdProyecto(n,id,DOC.paginas.length);
+    await desencolar(id);
     toast("Proyecto guardado en la nube");
     return true;
   }catch(e){
     console.error(paso,e);
+    PROY_ACT={nombre:n,k:claveProy(n),id};
+    await fijarIdProyecto(n,id,DOC.paginas.length);
+    if(!enLinea()||/offline|network|Failed to fetch/i.test(String(e))){
+      await encolar(id);
+      toast("Sin conexión. Se subirá cuando vuelva el internet");
+      return false;
+    }
     const c=e.code||e.message||"";
-    toast(/cors|Failed to fetch/i.test(String(e))
-      ? `Bloqueado por CORS al ${paso}`
-      : `Falló al ${paso}: ${c}`);
+    toast(/cors/i.test(String(e)) ? `Bloqueado por CORS al ${paso}` : `Falló al ${paso}: ${c}`);
     return false;
-  }finally{ if(b){ b.disabled=false; b.textContent="Subir a la nube"; } }
+  }finally{ if(b){ b.disabled=false; b.textContent="Subir a la nube"; } estadoNubeUI(); }
 }
+
+/* ---- reintento automático al volver la conexión ---- */
+let sincronizando=false;
+async function sincronizarNube(){
+  if(sincronizando||!hayNube()||!enLinea()) return;
+  const c=await leerCola(); if(!c.length) return;
+  sincronizando=true;
+  try{
+    /* solo se puede resubir el proyecto abierto: es el único cuyos bytes tenemos */
+    if(DOC && PROY_ACT && PROY_ACT.id && c.includes(PROY_ACT.id)){
+      const ok=await nubeSubir();
+      if(ok) toast("Pendiente sincronizado");
+    }
+  }finally{ sincronizando=false; estadoNubeUI(); }
+}
+window.addEventListener("online",()=>{ estadoNubeUI(); sincronizarNube(); });
+window.addEventListener("offline",estadoNubeUI);
 
 async function nubeAbrir(id,uidDueno){
   if(!hayNube()) return;
@@ -2447,11 +2539,62 @@ async function nubeAbrir(id,uidDueno){
     }
     if(!Array.isArray(d.REEMP)) d.REEMP=[];
     const bytes=await window.FB.bajarPdf(uidDueno||d.dueno,id);
-    await montarProyecto(d,bytes,{nombre:d.nombre,k:claveProy(d.nombre)});
+    await montarProyecto(d,bytes,{nombre:d.nombre,k:claveProy(d.nombre||id),id});
+    PROY_ACT={nombre:d.nombre||id,k:claveProy(d.nombre||id),id};
+    await fijarIdProyecto(d.nombre||id,id,(d.paginas||0));
+    rotuloGuardar();
   }catch(e){
     console.error(e);
     toast(/cors|Failed to fetch/i.test(String(e))? "Bloqueado por CORS al bajar" : "No pude abrir de la nube: "+(e.code||e.message||""));
   }
+}
+
+async function nubeRenombrar(p){
+  const n=await askText("Nuevo nombre del proyecto",p.nombre||"");
+  if(!n||!n.trim()||n.trim()===p.nombre) return;
+  try{
+    await window.FB.tocarDoc(p.id,{nombre:n.trim(),actualizado:Date.now()});
+    /* el índice local está indexado por nombre: hay que mover la entrada */
+    try{
+      const ix=await leerProyectos();
+      if(ix[p.nombre]){ ix[n.trim()]=ix[p.nombre]; delete ix[p.nombre]; await almSet(KEY_PROY,JSON.stringify(ix)); }
+    }catch(_){}
+    if(PROY_ACT&&PROY_ACT.id===p.id) PROY_ACT={...PROY_ACT,nombre:n.trim(),k:claveProy(n.trim())};
+    toast("Renombrado");
+    renderNube(); renderProyectos(); rotuloGuardar();
+  }catch(e){ console.error(e); toast("No pude renombrar: "+(e.code||"")); }
+}
+
+async function nubeCompartir(p){
+  const actuales=(p.invitados||[]);
+  const txt=actuales.length? "Ahora comparten: "+actuales.join(", ") : "Todavía no lo comparte nadie";
+  const c=await askText(txt+"\n\nCorreo a invitar (vacío para quitar a alguien)","");
+  if(c===null) return;
+  const correo=(c||"").trim().toLowerCase();
+  try{
+    if(correo){
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ toast("Ese correo no parece válido"); return; }
+      await window.FB.invitar(p.id,correo);
+      toast("Invitado "+correo);
+    }else if(actuales.length){
+      const q=await askText("¿A quién quito?",actuales[0]);
+      if(!q) return;
+      await window.FB.desinvitar(p.id,q.trim().toLowerCase());
+      toast("Acceso retirado");
+    }
+    renderNube();
+  }catch(e){ console.error(e); toast("No pude cambiar los permisos: "+(e.code||"")); }
+}
+
+async function nubeBorrar(p){
+  const c=await askText('Escribe BORRAR para eliminar "'+(p.nombre||p.id)+'" de la nube',"");
+  if((c||"").trim().toUpperCase()!=="BORRAR") return;
+  try{
+    try{ await window.FB.borrarPdf(p.dueno,p.id); }catch(_){}   /* puede no existir */
+    await window.FB.borrarDoc(p.id);
+    toast("Eliminado de la nube");
+    renderNube();
+  }catch(e){ console.error(e); toast("No pude eliminarlo: "+(e.code||"")); }
 }
 
 async function renderNube(){
@@ -2459,6 +2602,7 @@ async function renderNube(){
   if(!box||!rot) return;
   if(!hayNube()){ rot.hidden=true; box.innerHTML=""; return; }
   rot.hidden=false;
+  if(!enLinea()){ box.innerHTML='<div class="hint">Sin conexión: no puedo consultar la nube.</div>'; return; }
   box.innerHTML='<div class="hint">Consultando la nube…</div>';
   try{
     NUBE=await window.FB.listar(USUARIO.uid,USUARIO.email||"");
@@ -2466,12 +2610,20 @@ async function renderNube(){
     box.innerHTML="";
     if(!NUBE.length){ box.innerHTML='<div class="hint">Nada en la nube todavía.</div>'; return; }
     NUBE.forEach(p=>{
-      const mio=p.dueno===USUARIO.uid;
+      const mio=p.dueno===USUARIO.uid, inv=(p.invitados||[]).length;
       const el=document.createElement("div"); el.className="proy";
       el.innerHTML=`<span class="nm">${esc(p.nombre||p.id)}</span>
-        <span class="de">${p.paginas||"?"} pág.${mio?"":" · compartido"}</span>
-        <button class="btn sm" data-ab="1">Abrir</button>`;
+        <span class="de">${p.paginas||"?"} pág.${mio?(inv?` · ${inv} invitado${inv>1?"s":""}`:""):" · compartido"}</span>
+        <button class="btn sm" data-ab="1">Abrir</button>
+        ${mio?`<button class="btn sm icon" data-re="1" title="Renombrar">✎</button>
+               <button class="btn sm icon" data-co="1" title="Compartir">👤</button>
+               <button class="btn sm icon" data-bo="1" title="Eliminar de la nube">✕</button>`:""}`;
       el.querySelector("[data-ab]").onclick=()=>nubeAbrir(p.id,p.dueno);
+      if(mio){
+        el.querySelector("[data-re]").onclick=()=>nubeRenombrar(p);
+        el.querySelector("[data-co]").onclick=()=>nubeCompartir(p);
+        el.querySelector("[data-bo]").onclick=()=>nubeBorrar(p);
+      }
       box.appendChild(el);
     });
   }catch(e){ console.error(e); box.innerHTML='<div class="hint">No pude leer la nube.</div>'; }
@@ -2518,6 +2670,12 @@ try{
     alCambiar:cb=>A.onAuthStateChanged(auth,cb),
 
     guardarDoc:(id,datos)=>F.setDoc(F.doc(db,"proyectos",id),datos,{merge:true}),
+    /* update de campos sueltos: renombrar no debe reescribir todo el documento */
+    tocarDoc:(id,campos)=>F.updateDoc(F.doc(db,"proyectos",id),campos),
+    invitar:(id,correo)=>F.updateDoc(F.doc(db,"proyectos",id),
+      {invitados:F.arrayUnion(correo), actualizado:Date.now()}),
+    desinvitar:(id,correo)=>F.updateDoc(F.doc(db,"proyectos",id),
+      {invitados:F.arrayRemove(correo), actualizado:Date.now()}),
     leerDoc:async id=>{ const s=await F.getDoc(F.doc(db,"proyectos",id)); return s.exists()?s.data():null; },
     borrarDoc:id=>F.deleteDoc(F.doc(db,"proyectos",id)),
 
