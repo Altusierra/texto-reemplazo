@@ -221,6 +221,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
   </div>
   <button class="btn sm" id="btnInicio" hidden>← Inicio</button>
   <button class="btn sm" id="btnGuardarProy" hidden>Guardar proyecto</button>
+  <button class="btn sm" id="btnNube" hidden>Subir a la nube</button>
   <button class="btn sm" id="btnHtml">Descargar HTML</button>
   <button class="btn pri sm" id="btnPdf">Descargar PDF</button>
   <button class="btn sm" id="btnAvanzado" hidden title="Mostrar u ocultar las secciones que no afectan la salida">avanzado</button>
@@ -254,6 +255,8 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
         <span class="hint" id="estadoNube">Conectando con la nube…</span>
       </div>
       <div class="proys" id="proys"></div>
+      <div class="rotulo" id="rotNube" style="margin-top:14px" hidden>En la nube</div>
+      <div class="proys" id="proysNube"></div>
       <div class="btnrow" style="margin-top:9px">
         <button class="btn sm" id="btnAbrirArch">Abrir proyecto desde archivo</button>
         <button class="btn sm" id="btnSeguir" hidden>↩ Seguir con lo que estaba haciendo</button>
@@ -1969,6 +1972,7 @@ function aplicarModo(){
   $("#btnInicio").hidden      = (MODO==="inicio");
   $("#btnAvanzado").hidden    = (MODO==="inicio");
   $("#btnGuardarProy").hidden = !enPdf;
+  { const b=$("#btnNube"); if(b) b.hidden = !(enPdf && hayNube()); }
   filaCamposVisible();
   rotuloGuardar();
   $("#btnSeguir").hidden = !(MODO==="inicio" && DOC);
@@ -2375,7 +2379,10 @@ function nubeUI(){
     USUARIO=u||null;
     be.hidden=!!u; bs.hidden=!u;
     es.textContent = u ? `Sesión: ${u.email}` : "Entra con Google para guardar tus proyectos en la nube.";
+    if(typeof renderNube==="function") renderNube();
+    if(typeof aplicarModo==="function") aplicarModo();
   });
+  const bn=$("#btnNube"); if(bn) bn.onclick=async()=>{ if(await nubeSubir()) renderNube(); };
   be.onclick=async()=>{
     be.disabled=true;
     try{ await window.FB.entrar(); }
@@ -2385,6 +2392,77 @@ function nubeUI(){
   bs.onclick=async()=>{ try{ await window.FB.salir(); toast("Sesión cerrada"); }catch(_){} };
 }
 window.addEventListener("fb-listo", nubeUI);
+
+/* ============ nube: subir, listar, abrir (Etapa 2a) ============
+   Reusa paqueteProyecto y montarProyecto sin tocarlos. El PDF NO va en el
+   documento de Firestore —no cabría, el tope es 1 MiB— sino a Storage, en
+   proyectos/{uid}/{id}/doc.pdf. El documento guarda el resto y la lista de
+   invitados. Todavía sin cola de pendientes: eso es la 2b. */
+let NUBE=[];
+const idNube=n=>slug(n)+"-"+huellaTexto(n).split("-")[1];
+function hayNube(){ return !!(window.FB && USUARIO); }
+
+async function nubeSubir(){
+  if(!hayNube()){ toast("Entra con Google para usar la nube"); return false; }
+  if(!DOC){ toast("Abre primero un PDF"); return false; }
+  const n=(PROY_ACT&&PROY_ACT.nombre) || S.doc.titulo || "Proyecto";
+  const id=idNube(n), b=$("#btnNube");
+  if(b){ b.disabled=true; b.textContent="Subiendo…"; }
+  try{
+    const prev=await window.FB.leerDoc(id);           /* conservar los invitados ya puestos */
+    const d=paqueteProyecto(n,0);                     /* límite 0 => sin el PDF adentro */
+    delete d.pdf;
+    await window.FB.subirPdf(USUARIO.uid,id,DOC.bytes);
+    await window.FB.guardarDoc(id,{
+      ...d, dueno:USUARIO.uid, correoDueno:USUARIO.email||"",
+      invitados:(prev&&prev.invitados)||[], actualizado:Date.now()
+    });
+    PROY_ACT={nombre:n,k:claveProy(n)};
+    toast("Proyecto guardado en la nube");
+    return true;
+  }catch(e){
+    console.error(e);
+    toast(/cors|Failed to fetch/i.test(String(e))? "Bloqueado por CORS al subir" : "No pude subir: "+(e.code||e.message||""));
+    return false;
+  }finally{ if(b){ b.disabled=false; b.textContent="Subir a la nube"; } }
+}
+
+async function nubeAbrir(id,uidDueno){
+  if(!hayNube()) return;
+  try{
+    toast("Bajando de la nube…");
+    const d=await window.FB.leerDoc(id);
+    if(!d){ toast("Ese proyecto ya no está"); return; }
+    const bytes=await window.FB.bajarPdf(uidDueno||d.dueno,id);
+    await montarProyecto(d,bytes,{nombre:d.nombre,k:claveProy(d.nombre)});
+  }catch(e){
+    console.error(e);
+    toast(/cors|Failed to fetch/i.test(String(e))? "Bloqueado por CORS al bajar" : "No pude abrir de la nube: "+(e.code||e.message||""));
+  }
+}
+
+async function renderNube(){
+  const box=$("#proysNube"), rot=$("#rotNube");
+  if(!box||!rot) return;
+  if(!hayNube()){ rot.hidden=true; box.innerHTML=""; return; }
+  rot.hidden=false;
+  box.innerHTML='<div class="hint">Consultando la nube…</div>';
+  try{
+    NUBE=await window.FB.listar(USUARIO.uid,USUARIO.email||"");
+    NUBE.sort((a,b)=>(b.actualizado||0)-(a.actualizado||0));
+    box.innerHTML="";
+    if(!NUBE.length){ box.innerHTML='<div class="hint">Nada en la nube todavía.</div>'; return; }
+    NUBE.forEach(p=>{
+      const mio=p.dueno===USUARIO.uid;
+      const el=document.createElement("div"); el.className="proy";
+      el.innerHTML=`<span class="nm">${esc(p.nombre||p.id)}</span>
+        <span class="de">${p.paginas||"?"} pág.${mio?"":" · compartido"}</span>
+        <button class="btn sm" data-ab="1">Abrir</button>`;
+      el.querySelector("[data-ab]").onclick=()=>nubeAbrir(p.id,p.dueno);
+      box.appendChild(el);
+    });
+  }catch(e){ console.error(e); box.innerHTML='<div class="hint">No pude leer la nube.</div>'; }
+}
 
 /* ============ arranque ============ */
 pintarTodo();
@@ -2414,13 +2492,49 @@ const CFG={
 try{
   const {initializeApp}=await import(SDK+"firebase-app.js");
   const A=await import(SDK+"firebase-auth.js");
+  const F=await import(SDK+"firebase-firestore.js");
+  const G=await import(SDK+"firebase-storage.js");
   const app=initializeApp(CFG), auth=A.getAuth(app);
+  const db=F.getFirestore(app), st=G.getStorage(app);
   auth.useDeviceLanguage();
+  const rutaPdf=(uid,id)=>G.ref(st,`proyectos/${uid}/${id}/doc.pdf`);
   window.FB={
     app, auth,
     entrar:()=>A.signInWithPopup(auth,new A.GoogleAuthProvider()),
     salir:()=>A.signOut(auth),
-    alCambiar:cb=>A.onAuthStateChanged(auth,cb)
+    alCambiar:cb=>A.onAuthStateChanged(auth,cb),
+
+    guardarDoc:(id,datos)=>F.setDoc(F.doc(db,"proyectos",id),datos,{merge:false}),
+    leerDoc:async id=>{ const s=await F.getDoc(F.doc(db,"proyectos",id)); return s.exists()?s.data():null; },
+    borrarDoc:id=>F.deleteDoc(F.doc(db,"proyectos",id)),
+
+    /* Las reglas rechazan listar la colección sin filtro: Firestore solo autoriza
+       una consulta si ella misma garantiza que devuelve documentos permitidos.
+       Por eso van dos consultas y se unen aquí. */
+    listar:async(uid,correo)=>{
+      const col=F.collection(db,"proyectos"), vistos={};
+      const partes=[F.query(col,F.where("dueno","==",uid))];
+      if(correo) partes.push(F.query(col,F.where("invitados","array-contains",correo)));
+      for(const q of partes){
+        try{ (await F.getDocs(q)).forEach(d=>{ vistos[d.id]={id:d.id,...d.data()}; }); }
+        catch(e){ console.warn("consulta rechazada:",e); }
+      }
+      return Object.values(vistos);
+    },
+
+    subirPdf:async(uid,id,bytes)=>{
+      await G.uploadBytes(rutaPdf(uid,id),new Uint8Array(bytes),{contentType:"application/pdf"});
+    },
+    /* getDownloadURL + fetch en vez de getBytes: el endpoint de descarga responde
+       con cabeceras CORS abiertas, mientras que getBytes exige configurar CORS
+       en el bucket con la herramienta de línea de comandos de Google Cloud. */
+    bajarPdf:async(uid,id)=>{
+      const url=await G.getDownloadURL(rutaPdf(uid,id));
+      const r=await fetch(url);
+      if(!r.ok) throw new Error("descarga "+r.status);
+      return await r.arrayBuffer();
+    },
+    borrarPdf:(uid,id)=>G.deleteObject(rutaPdf(uid,id))
   };
 }catch(e){
   console.warn("Firebase no disponible, se sigue en modo local:",e);
