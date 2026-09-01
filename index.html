@@ -248,6 +248,11 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
 
     <div>
       <div class="rotulo">Mis proyectos</div>
+      <div class="btnrow" id="filaNube" style="align-items:center;margin-bottom:10px">
+        <button class="btn sm" id="btnEntrar" hidden>Entrar con Google</button>
+        <button class="btn sm" id="btnSalir" hidden>Salir</button>
+        <span class="hint" id="estadoNube">Conectando con la nube…</span>
+      </div>
       <div class="proys" id="proys"></div>
       <div class="btnrow" style="margin-top:9px">
         <button class="btn sm" id="btnAbrirArch">Abrir proyecto desde archivo</button>
@@ -2343,11 +2348,85 @@ $("#btnModoLibre").onclick=()=>{
   });
 })();
 
+/* ============ sesión en la nube (Etapa 1) ============
+   Solo entrar y salir. Todavía no sincroniza nada: eso es la Etapa 2.
+   El módulo de abajo corre DESPUÉS que este script, así que aquí solo se deja el
+   oído puesto en "fb-listo". Si Firebase no cargó, la app sigue igual de local. */
+let USUARIO=null;
+function msgAuth(e){
+  const c=(e&&e.code)||"";
+  if(c==="auth/unauthorized-domain") return "Este dominio no está autorizado en Firebase";
+  if(c==="auth/popup-blocked")       return "El navegador bloqueó la ventana. Permite las emergentes y reintenta";
+  if(c==="auth/popup-closed-by-user")return "Cerraste la ventana antes de terminar";
+  if(c==="auth/cancelled-popup-request") return "";
+  if(c==="auth/operation-not-allowed")return "Falta habilitar el acceso con Google en Firebase";
+  if(c==="auth/network-request-failed")return "Sin conexión: no pude contactar a Google";
+  return "No pude iniciar sesión"+(c?` (${c})`:"");
+}
+function nubeUI(){
+  const be=$("#btnEntrar"), bs=$("#btnSalir"), es=$("#estadoNube");
+  if(!be||!bs||!es) return;
+  if(!window.FB){
+    be.hidden=true; bs.hidden=true;
+    es.textContent="Sin nube: tus proyectos se guardan solo en este navegador.";
+    return;
+  }
+  window.FB.alCambiar(u=>{
+    USUARIO=u||null;
+    be.hidden=!!u; bs.hidden=!u;
+    es.textContent = u ? `Sesión: ${u.email}` : "Entra con Google para guardar tus proyectos en la nube.";
+  });
+  be.onclick=async()=>{
+    be.disabled=true;
+    try{ await window.FB.entrar(); }
+    catch(e){ console.error(e); const m=msgAuth(e); if(m) toast(m); }
+    finally{ be.disabled=false; }
+  };
+  bs.onclick=async()=>{ try{ await window.FB.salir(); toast("Sesión cerrada"); }catch(_){} };
+}
+window.addEventListener("fb-listo", nubeUI);
+
 /* ============ arranque ============ */
 pintarTodo();
 ajustar();
 refrescarLista();
 irAInicio();
+</script>
+
+<!-- ============ puente con Firebase (Etapa 1: conexión y sesión) ============
+     El SDK moderno solo existe como módulo ES, y un módulo tiene ámbito propio:
+     no ve las variables del script de arriba ni al revés. Por eso el módulo cuelga
+     lo que hace falta de window.FB y avisa con el evento "fb-listo".
+     El import es DINÁMICO y va dentro de un try: un import estático que falla no
+     se puede atrapar y tumbaría la página entera. Si Firebase no carga —sin
+     internet, o dentro de un artifact de Claude— window.FB queda en null y la app
+     sigue funcionando exactamente igual que hoy, guardando en local. -->
+<script type="module">
+const SDK="https://www.gstatic.com/firebasejs/12.18.0/";
+const CFG={
+  apiKey:"AIzaSyDiqg1-OSaDP7b7yR4uZFbBDS00LmhKENc",
+  authDomain:"texto-reemplazo.firebaseapp.com",
+  projectId:"texto-reemplazo",
+  storageBucket:"texto-reemplazo.firebasestorage.app",
+  messagingSenderId:"1001061845296",
+  appId:"1:1001061845296:web:7619575f1c040a3b2520f5"
+};
+try{
+  const {initializeApp}=await import(SDK+"firebase-app.js");
+  const A=await import(SDK+"firebase-auth.js");
+  const app=initializeApp(CFG), auth=A.getAuth(app);
+  auth.useDeviceLanguage();
+  window.FB={
+    app, auth,
+    entrar:()=>A.signInWithPopup(auth,new A.GoogleAuthProvider()),
+    salir:()=>A.signOut(auth),
+    alCambiar:cb=>A.onAuthStateChanged(auth,cb)
+  };
+}catch(e){
+  console.warn("Firebase no disponible, se sigue en modo local:",e);
+  window.FB=null;
+}
+window.dispatchEvent(new CustomEvent("fb-listo"));
 </script>
 </body>
 </html>
