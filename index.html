@@ -1746,7 +1746,11 @@ async function leerPdf(file){
          la vertical, así que mezclarlo con el texto normal descoloca los renglones y
          los offsets. Se descarta: no se puede editar, pero el original queda intacto
          en la salida, que es lo que importa. */
-      const t=it.transform, gir=Math.abs(t[1])>Math.abs(t[0])*0.08 || Math.abs(t[2])>Math.abs(t[3])*0.08;
+      /* Solo la LÍNEA BASE (t[0],t[1]) decide si el fragmento está girado.
+         t[2]/t[3] es el vector "arriba" del glifo: la cursiva sintética lo inclina
+         ~12° dejando la base horizontal, así que mirarlo descartaba todo el texto
+         en cursiva y dejaba la página vacía ("no tiene texto seleccionable"). */
+      const t=it.transform, gir=Math.abs(t[1])>Math.abs(t[0])*0.08;
       if(gir){
         rotados++;
         /* fuera del lector, pero se guarda su caja: el recuadro que tapa un dato
