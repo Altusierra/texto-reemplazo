@@ -384,12 +384,12 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
     <summary><h2>Campos</h2></summary>
     <div class="body">
       <div class="hint" id="hintCampos">Cada campo genera un marcador. Toca el marcador para copiarlo al cuerpo del documento.</div>
-      <div id="campos" style="display:flex;flex-direction:column;gap:9px"></div>
-      <button class="btn sm" id="btnAddCampo">+ Agregar campo</button>
-      <div id="filaCampos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" hidden>
+      <div id="filaCampos" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px" hidden>
         <button class="btn sm" id="btnExpCampos">Exportar campos</button>
         <button class="btn sm" id="btnImpCampos">Importar campos</button>
       </div>
+      <div id="campos" style="display:flex;flex-direction:column;gap:9px"></div>
+      <button class="btn sm" id="btnAddCampo">+ Agregar campo</button>
       <input type="file" id="fileCampos" accept="application/json,.json" hidden>
     </div>
   </details>
