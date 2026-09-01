@@ -2407,22 +2407,31 @@ async function nubeSubir(){
   if(!DOC){ toast("Abre primero un PDF"); return false; }
   const n=(PROY_ACT&&PROY_ACT.nombre) || S.doc.titulo || "Proyecto";
   const id=idNube(n), b=$("#btnNube");
+  let paso="preparar";
   if(b){ b.disabled=true; b.textContent="Subiendo…"; }
   try{
-    const prev=await window.FB.leerDoc(id);           /* conservar los invitados ya puestos */
     const d=paqueteProyecto(n,0);                     /* límite 0 => sin el PDF adentro */
     delete d.pdf;
+    /* Firestore no admite un array dentro de otro array, y REEMP es uno por
+       página. Viaja como texto y se vuelve a armar al bajarlo. */
+    d.REEMP=JSON.stringify(REEMP);
+    paso="subir el PDF";
     await window.FB.subirPdf(USUARIO.uid,id,DOC.bytes);
+    paso="guardar los datos";
+    /* con merge, no mandar "invitados" los conserva: por eso no hace falta
+       leer antes, que era justo lo que fallaba con el documento aún inexistente */
     await window.FB.guardarDoc(id,{
-      ...d, dueno:USUARIO.uid, correoDueno:USUARIO.email||"",
-      invitados:(prev&&prev.invitados)||[], actualizado:Date.now()
+      ...d, dueno:USUARIO.uid, correoDueno:USUARIO.email||"", actualizado:Date.now()
     });
     PROY_ACT={nombre:n,k:claveProy(n)};
     toast("Proyecto guardado en la nube");
     return true;
   }catch(e){
-    console.error(e);
-    toast(/cors|Failed to fetch/i.test(String(e))? "Bloqueado por CORS al subir" : "No pude subir: "+(e.code||e.message||""));
+    console.error(paso,e);
+    const c=e.code||e.message||"";
+    toast(/cors|Failed to fetch/i.test(String(e))
+      ? `Bloqueado por CORS al ${paso}`
+      : `Falló al ${paso}: ${c}`);
     return false;
   }finally{ if(b){ b.disabled=false; b.textContent="Subir a la nube"; } }
 }
@@ -2433,6 +2442,10 @@ async function nubeAbrir(id,uidDueno){
     toast("Bajando de la nube…");
     const d=await window.FB.leerDoc(id);
     if(!d){ toast("Ese proyecto ya no está"); return; }
+    if(typeof d.REEMP==="string"){                    /* vuelve a array: viajó como texto */
+      try{ d.REEMP=JSON.parse(d.REEMP); }catch(_){ d.REEMP=[]; }
+    }
+    if(!Array.isArray(d.REEMP)) d.REEMP=[];
     const bytes=await window.FB.bajarPdf(uidDueno||d.dueno,id);
     await montarProyecto(d,bytes,{nombre:d.nombre,k:claveProy(d.nombre)});
   }catch(e){
@@ -2504,7 +2517,7 @@ try{
     salir:()=>A.signOut(auth),
     alCambiar:cb=>A.onAuthStateChanged(auth,cb),
 
-    guardarDoc:(id,datos)=>F.setDoc(F.doc(db,"proyectos",id),datos,{merge:false}),
+    guardarDoc:(id,datos)=>F.setDoc(F.doc(db,"proyectos",id),datos,{merge:true}),
     leerDoc:async id=>{ const s=await F.getDoc(F.doc(db,"proyectos",id)); return s.exists()?s.data():null; },
     borrarDoc:id=>F.deleteDoc(F.doc(db,"proyectos",id)),
 
