@@ -2191,9 +2191,9 @@ async function guardarProyecto(){
     const k=claveProy(n), dato=paqueteProyecto(n,LIM_B64);
     await almSet(k,JSON.stringify(dato));
     const ix=await leerProyectos();
-    ix[n]={k,paginas:DOC.paginas.length,conPdf:!!dato.pdf,fecha:dato.fecha};
+    ix[n]=Object.assign({},ix[n]||{},{k,paginas:DOC.paginas.length,conPdf:!!dato.pdf,fecha:dato.fecha});
     await almSet(KEY_PROY,JSON.stringify(ix));
-    PROY_ACT={nombre:n,k};
+    PROY_ACT={nombre:n,k,id:(PROY_ACT&&PROY_ACT.id)||ix[n].idNube||null};
     await renderProyectos();
     toast(dato.pdf? "Proyecto guardado. Los cambios que hagas se guardan solos"
                   : "Proyecto guardado. El PDF pesa mucho: te lo pediré al abrirlo");
@@ -2218,9 +2218,14 @@ async function guardarAuto(){
     const dato=paqueteProyecto(PROY_ACT.nombre,LIM_B64);
     await almSet(PROY_ACT.k,JSON.stringify(dato));
     const ix=await leerProyectos();
-    ix[PROY_ACT.nombre]={k:PROY_ACT.k,paginas:DOC.paginas.length,conPdf:!!dato.pdf,fecha:dato.fecha};
+    /* conservar lo que ya hubiera (idNube, pdfEnNube): reemplazar la entrada
+       entera borraba el vínculo con la nube en cada autoguardado */
+    ix[PROY_ACT.nombre]=Object.assign({},ix[PROY_ACT.nombre]||{},
+      {k:PROY_ACT.k,paginas:DOC.paginas.length,conPdf:!!dato.pdf,fecha:dato.fecha});
+    if(PROY_ACT.id) ix[PROY_ACT.nombre].idNube=PROY_ACT.id;
     await almSet(KEY_PROY,JSON.stringify(ix));
     rotuloGuardar("Guardado ✓");
+    programarNube();
     return true;
   }catch(e){ console.error(e); return false; }
 }
@@ -2268,6 +2273,13 @@ async function abrirProyecto(nombre){
 }
 async function renderProyectos(){
   const box=$("#proys"); if(!box) return;
+  /* con nube disponible y sin sesión, no se listan: pediste que al cerrar
+     sesión no se vea ninguno. Si Firebase no cargó, se listan igual, o la app
+     quedaría inservible sin internet. */
+  if(window.FB && !USUARIO){
+    box.innerHTML='<div class="hint">Entra con Google para ver tus proyectos.</div>';
+    return;
+  }
   if((await almInit())==="ninguno"){
     box.innerHTML='<div class="hint">Este navegador no me deja guardar aquí. Usa <b>Guardar proyecto</b>: te lo descargo como archivo y lo abres con el botón de abajo.</div>';
     return;
@@ -2389,6 +2401,7 @@ function nubeUI(){
     if(typeof estadoNubeUI==="function") estadoNubeUI();
     else es.textContent = u ? `Sesión: ${u.email}` : "Entra con Google para guardar tus proyectos en la nube.";
     if(typeof renderNube==="function") renderNube();
+    if(typeof renderProyectos==="function") renderProyectos();
     if(typeof aplicarModo==="function") aplicarModo();
     if(typeof sincronizarNube==="function") sincronizarNube();
   });
@@ -2456,9 +2469,55 @@ async function idDeProyecto(nombre){
 async function fijarIdProyecto(nombre,id,paginas){
   try{
     const ix=await leerProyectos();
-    ix[nombre]=Object.assign({},ix[nombre]||{},{idNube:id,paginas:paginas,fecha:new Date().toISOString()});
+    ix[nombre]=Object.assign({},ix[nombre]||{},
+      {k:claveProy(nombre),idNube:id,paginas:paginas,fecha:new Date().toISOString()});
     await almSet(KEY_PROY,JSON.stringify(ix));
   }catch(_){}
+}
+
+/* ---- núcleo de subida, compartido por el botón y por la cola ----
+   El PDF no cambia nunca: se sube una sola vez por proyecto y después solo se
+   actualiza el documento de Firestore. Así una edición cuesta una escritura, no
+   una subida de varios MB. */
+async function nubeEmpujar(id,nombre,d,bytes,yaTienePdf){
+  if(!enLinea()) throw new Error("offline");
+  if(bytes && !yaTienePdf) await window.FB.subirPdf(USUARIO.uid,id,bytes);
+  await window.FB.guardarDoc(id,{
+    ...d, nombre, dueno:USUARIO.uid, correoDueno:USUARIO.email||"", actualizado:Date.now()
+  });
+}
+async function marcarPdfEnNube(nombre){
+  try{
+    const ix=await leerProyectos();
+    if(ix[nombre]){ ix[nombre].pdfEnNube=true; await almSet(KEY_PROY,JSON.stringify(ix)); }
+  }catch(_){}
+}
+
+/* ---- sincronización automática, con espera larga para no gastar escrituras ---- */
+let tNube=null;
+function programarNube(){
+  if(!hayNube()||!PROY_ACT||!PROY_ACT.id) return;   /* solo una vez ya nombrado y subido */
+  clearTimeout(tNube);
+  tNube=setTimeout(()=>{ empujarActual(true); },8000);
+}
+async function empujarActual(silencioso){
+  if(!hayNube()||!DOC||!PROY_ACT||!PROY_ACT.id) return false;
+  const ix=await leerProyectos(), e=ix[PROY_ACT.nombre]||{};
+  try{
+    const d=paqueteProyecto(PROY_ACT.nombre,0); delete d.pdf;
+    d.REEMP=JSON.stringify(REEMP);
+    await nubeEmpujar(PROY_ACT.id,PROY_ACT.nombre,d,DOC.bytes,!!e.pdfEnNube);
+    if(!e.pdfEnNube) await marcarPdfEnNube(PROY_ACT.nombre);
+    await desencolar(PROY_ACT.id);
+    if(!silencioso) toast("Proyecto guardado en la nube");
+    else rotuloGuardar("Guardado ✓ en la nube");
+    return true;
+  }catch(e2){
+    console.error("auto nube",e2);
+    await encolar(PROY_ACT.id);
+    if(!silencioso) toast("Sin conexión. Se subirá cuando vuelva el internet");
+    return false;
+  }finally{ estadoNubeUI(); }
 }
 
 async function nubeSubir(){
@@ -2483,16 +2542,16 @@ async function nubeSubir(){
     /* Firestore no admite un array dentro de otro array, y REEMP es uno por
        página. Viaja como texto y se vuelve a armar al bajarlo. */
     d.REEMP=JSON.stringify(REEMP);
-    if(!enLinea()) throw new Error("offline");
     paso="subir el PDF";
-    await window.FB.subirPdf(USUARIO.uid,id,DOC.bytes);
+    const ix=await leerProyectos(), ya=!!(ix[n]&&ix[n].pdfEnNube);
+    await nubeEmpujar(id,n,d,DOC.bytes,ya);
     paso="guardar los datos";
-    /* con merge, no mandar "invitados" los conserva */
-    await window.FB.guardarDoc(id,{
-      ...d, nombre:n, dueno:USUARIO.uid, correoDueno:USUARIO.email||"", actualizado:Date.now()
-    });
     PROY_ACT={nombre:n,k:claveProy(n),id};
     await fijarIdProyecto(n,id,DOC.paginas.length);
+    /* copia local con el PDF: es lo que permite que la cola resuba este
+       proyecto más tarde aunque ya no esté abierto */
+    try{ await guardarAuto(); }catch(_){}
+    await marcarPdfEnNube(n);
     await desencolar(id);
     toast("Proyecto guardado en la nube");
     return true;
@@ -2500,13 +2559,20 @@ async function nubeSubir(){
     console.error(paso,e);
     PROY_ACT={nombre:n,k:claveProy(n),id};
     await fijarIdProyecto(n,id,DOC.paginas.length);
-    if(!enLinea()||/offline|network|Failed to fetch/i.test(String(e))){
+    const txt=String(e&&e.message||e);
+    if(!enLinea()||/^offline$/i.test(txt)){
       await encolar(id);
       toast("Sin conexión. Se subirá cuando vuelva el internet");
       return false;
     }
-    const c=e.code||e.message||"";
-    toast(/cors/i.test(String(e)) ? `Bloqueado por CORS al ${paso}` : `Falló al ${paso}: ${c}`);
+    if(/Failed to fetch|NetworkError|CORS/i.test(txt)){
+      /* el navegador se cree conectado: no es falta de red, es que la petición
+         no salió. Casi siempre CORS del bucket o un bloqueador. */
+      await encolar(id);
+      toast(`No pude conectar al ${paso} (revisa CORS del bucket). Queda pendiente`);
+      return false;
+    }
+    toast(`Falló al ${paso}: ${e.code||txt}`);
     return false;
   }finally{ if(b){ b.disabled=false; b.textContent="Subir a la nube"; } estadoNubeUI(); }
 }
@@ -2517,13 +2583,30 @@ async function sincronizarNube(){
   if(sincronizando||!hayNube()||!enLinea()) return;
   const c=await leerCola(); if(!c.length) return;
   sincronizando=true;
+  let hechos=0;
   try{
-    /* solo se puede resubir el proyecto abierto: es el único cuyos bytes tenemos */
-    if(DOC && PROY_ACT && PROY_ACT.id && c.includes(PROY_ACT.id)){
-      const ok=await nubeSubir();
-      if(ok) toast("Pendiente sincronizado");
+    const ix=await leerProyectos();
+    for(const id of c.slice()){
+      try{
+        /* el proyecto abierto: sus bytes están en memoria */
+        if(DOC && PROY_ACT && PROY_ACT.id===id){ if(await empujarActual(true)) hechos++; continue; }
+        /* uno cerrado: el PDF está guardado en local en base64, así que
+           no hace falta abrirlo para resubirlo */
+        const nombre=Object.keys(ix).find(k=>ix[k].idNube===id);
+        if(!nombre){ await desencolar(id); continue; }
+        const r=await almGet(ix[nombre].k); if(!r){ await desencolar(id); continue; }
+        const g=JSON.parse(r.value);
+        const d={...g}; const b64=d.pdf; delete d.pdf;
+        d.REEMP=JSON.stringify(Array.isArray(g.REEMP)?g.REEMP:[]);
+        const bytes=b64? deB64(b64).buffer : null;
+        if(!bytes && !ix[nombre].pdfEnNube){ await desencolar(id); continue; }  /* sin PDF que subir */
+        await nubeEmpujar(id,nombre,d,bytes,!!ix[nombre].pdfEnNube);
+        if(bytes) await marcarPdfEnNube(nombre);
+        await desencolar(id); hechos++;
+      }catch(e){ console.warn("pendiente sin subir:",id,e); }
     }
-  }finally{ sincronizando=false; estadoNubeUI(); }
+    if(hechos) toast(`${hechos} pendiente${hechos>1?"s":""} sincronizado${hechos>1?"s":""}`);
+  }finally{ sincronizando=false; estadoNubeUI(); renderNube(); }
 }
 window.addEventListener("online",()=>{ estadoNubeUI(); sincronizarNube(); });
 window.addEventListener("offline",estadoNubeUI);
@@ -2615,7 +2698,7 @@ async function renderNube(){
       el.innerHTML=`<span class="nm">${esc(p.nombre||p.id)}</span>
         <span class="de">${p.paginas||"?"} pág.${mio?(inv?` · ${inv} invitado${inv>1?"s":""}`:""):" · compartido"}</span>
         <button class="btn sm" data-ab="1">Abrir</button>
-        ${mio?`<button class="btn sm icon" data-re="1" title="Renombrar">✎</button>
+        ${mio?`<button class="btn sm icon" data-re="1" title="Renombrar">✏️</button>
                <button class="btn sm icon" data-co="1" title="Compartir">👤</button>
                <button class="btn sm icon" data-bo="1" title="Eliminar de la nube">✕</button>`:""}`;
       el.querySelector("[data-ab]").onclick=()=>nubeAbrir(p.id,p.dueno);
