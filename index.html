@@ -386,6 +386,11 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
       <div class="hint" id="hintCampos">Cada campo genera un marcador. Toca el marcador para copiarlo al cuerpo del documento.</div>
       <div id="campos" style="display:flex;flex-direction:column;gap:9px"></div>
       <button class="btn sm" id="btnAddCampo">+ Agregar campo</button>
+      <div id="filaCampos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" hidden>
+        <button class="btn sm" id="btnExpCampos">Exportar campos</button>
+        <button class="btn sm" id="btnImpCampos">Importar campos</button>
+      </div>
+      <input type="file" id="fileCampos" accept="application/json,.json" hidden>
     </div>
   </details>
 
@@ -1959,6 +1964,7 @@ function aplicarModo(){
   $("#btnInicio").hidden      = (MODO==="inicio");
   $("#btnAvanzado").hidden    = (MODO==="inicio");
   $("#btnGuardarProy").hidden = !enPdf;
+  filaCamposVisible();
   rotuloGuardar();
   $("#btnSeguir").hidden = !(MODO==="inicio" && DOC);
   $("#btnAvanzado").style.opacity = AVANZADO? 1 : .5;
@@ -2092,6 +2098,61 @@ function paqueteProyecto(n,limite){
     huellaTx:huellaTexto(DOC.paginas.map(p=>p.texto).join("\n\n")),
     paginas:DOC.paginas.length, pdf:b64, fecha:new Date().toISOString()};
 }
+/* ============ compartir campos sin el PDF ============
+   El paquete es compatible con el de proyecto (lleva S.campos y REEMP), así que
+   el flujo de "abrir proyecto" lo entiende sin cambios. Dos diferencias a propósito:
+   no lleva el PDF (pesa unos KB y viaja por WhatsApp) y no lleva `huella`, la huella
+   byte a byte, para que le sirva al colaborador aunque su copia del PDF sea un
+   reenvío reguardado. Sí conserva `huellaTx`: si el TEXTO no coincide, no aplica nada. */
+function paqueteCampos(){
+  return {v:1, tipo:"campos",
+    nombre:(PROY_ACT&&PROY_ACT.nombre)||S.doc.titulo||"campos",
+    S:{campos:S.campos}, REEMP,
+    huellaTx:huellaTexto(DOC.paginas.map(p=>p.texto).join("\n\n")),
+    paginas:DOC.paginas.length, fecha:new Date().toISOString()};
+}
+function exportarCampos(){
+  if(!DOC){ toast("Abre primero el PDF: los campos guardan en qué parte del texto va cada dato"); return; }
+  if(!S.campos.length){ toast("Todavía no hay campos que exportar"); return; }
+  const d=paqueteCampos(), n=S.campos.length;
+  bajar((slug(d.nombre)||"campos")+".campos.json", JSON.stringify(d), "application/json");
+  toast(`${n} campo${n>1?"s":""} exportado${n>1?"s":""} con sus valores. Manda ese archivo junto al PDF`);
+}
+function aplicarCampos(d){
+  if(d.huellaTx && huellaTexto(DOC.paginas.map(p=>p.texto).join("\n\n"))!==d.huellaTx){
+    toast("Esos campos son de otro documento: el texto del PDF no coincide"); return false;
+  }
+  REEMP=DOC.paginas.map((p,i)=>{
+    const l=(d.REEMP&&d.REEMP[i])||[];
+    return l.filter(x=>x&&x.clave&&x.ini>=0&&x.fin<=p.texto.length&&x.fin>x.ini)
+            .map(x=>({ini:x.ini,fin:x.fin,clave:x.clave}));
+  });
+  S.campos=((d.S&&d.S.campos)||[]).map(x=>({...x,id:uid()}));
+  sincronizar(); SUG=[]; pintarTodo(); renderSug(); pedirPrevia(); tocado();
+  const n=S.campos.length;
+  toast(`${n} campo${n>1?"s":""} importado${n>1?"s":""}`);
+  return true;
+}
+function filaCamposVisible(){
+  const f=$("#filaCampos"); if(f) f.hidden = !DOC;
+}
+$("#btnExpCampos").onclick=exportarCampos;
+$("#btnImpCampos").onclick=()=>$("#fileCampos").click();
+$("#fileCampos").addEventListener("change",e=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    let d=null; try{ d=JSON.parse(r.result); }catch(_){}
+    if(!d||!Array.isArray(d.REEMP)||!d.S||!Array.isArray(d.S.campos)){
+      toast("Ese archivo no tiene campos de esta app"); return;
+    }
+    if(DOC){ aplicarCampos(d); return; }
+    PROY_PEND=d; toast("Ahora elige el PDF al que pertenecen estos campos");
+    $("#fileProy").click();
+  };
+  r.readAsText(f);
+});
+
 function bajarProyecto(n){
   const d=paqueteProyecto(n,20000000);      /* en archivo no hay tope de 5 MB */
   bajar((slug(n)||"proyecto")+".proyecto.json", JSON.stringify(d), "application/json");
