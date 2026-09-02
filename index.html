@@ -229,6 +229,14 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
 
 <!-- ================= INICIO ================= -->
 <div id="inicio" class="noprint">
+  <div id="puerta" style="position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px">
+    <div style="width:min(380px,100%);text-align:center">
+      <div style="font-size:19px;font-weight:700;margin-bottom:8px">Papelería</div>
+      <div class="hint" id="puertaTxt" style="margin-bottom:18px">Entra con tu cuenta para continuar.</div>
+      <button class="btn pri" id="puertaEntrar">Entrar con Google</button>
+      <button class="btn sm" id="puertaSalir" style="margin-top:10px" hidden>Salir</button>
+    </div>
+  </div>
   <div class="inicio-caja">
     <div>
       <h1 class="inicio-tit">Cambia los datos de un PDF sin tocarle el diseño</h1>
@@ -1982,6 +1990,7 @@ function aplicarModo(){
   $("#btnGuardarProy").hidden = !enPdf;
   { const b=$("#btnNube"); if(b) b.hidden = !(enPdf && hayNube()); }
   filaCamposVisible();
+  if(typeof aplicarPermisos==="function") aplicarPermisos();
   rotuloGuardar();
   $("#btnSeguir").hidden = !(MODO==="inicio" && DOC);
   $("#btnAvanzado").style.opacity = AVANZADO? 1 : .5;
@@ -2372,6 +2381,60 @@ $("#btnModoLibre").onclick=()=>{
   });
 })();
 
+/* ============ acceso y permisos ============
+   DUENA va escrita aquí a propósito: si el permiso dependiera solo de tener
+   proyectos, al vaciar la nube te quedarías fuera de tu propia aplicación.
+
+   Los permisos van en un MAPA indexado por correo, no en una lista, porque las
+   reglas de Firestore no saben buscar dentro de un array de mapas pero sí leer
+   una clave de un mapa. Cada capacidad es un interruptor independiente. */
+const DUENA="altusierra@gmail.com";
+const CAPS=[
+  {k:"abrir",     t:"Abrir el proyecto",              def:true,  real:true},
+  {k:"guardar",   t:"Guardar sus cambios en la nube",  def:false, real:true},
+  {k:"campos",    t:"Crear, borrar o mover campos",    def:false, real:true},
+  {k:"renombrar", t:"Renombrar el proyecto",           def:false, real:true},
+  {k:"descargar", t:"Descargar PDF y HTML",            def:true,  real:false},
+  {k:"exportar",  t:"Exportar campos a archivo",       def:false, real:false},
+  {k:"crear",     t:"Subir PDFs y crear proyectos propios (toda la app)", def:false, real:true}
+];
+let ACCESO=null;          /* null = sin comprobar; true/false = veredicto */
+let PERM=null;            /* permisos del proyecto abierto, o null si es tuyo */
+
+const soyDuena=()=>!!(USUARIO && (USUARIO.email||"").toLowerCase()===DUENA);
+function puedo(cap){
+  if(soyDuena()) return true;
+  if(!PERM) return true;                 /* proyecto propio, sin restricciones */
+  const c=CAPS.find(x=>x.k===cap);
+  return PERM[cap]!==undefined ? !!PERM[cap] : !!(c&&c.def);
+}
+
+async function comprobarAcceso(){
+  if(!window.FB){ ACCESO=true; pintarPuerta(); return; }   /* sin nube, app local */
+  if(!USUARIO){ ACCESO=null; pintarPuerta(); return; }
+  if(soyDuena()){ ACCESO=true; pintarPuerta(); return; }
+  try{
+    const l=await window.FB.listar(USUARIO.uid,(USUARIO.email||"").toLowerCase());
+    const cfg=await window.FB.leerConfig();
+    const puedeCrear=!!(cfg&&(cfg.crear||[]).includes((USUARIO.email||"").toLowerCase()));
+    ACCESO = l.length>0 || puedeCrear;
+  }catch(e){ console.warn("acceso",e); ACCESO=false; }
+  pintarPuerta();
+}
+function pintarPuerta(){
+  const p=$("#puerta"); if(!p) return;
+  const t=$("#puertaTxt"), be=$("#puertaEntrar"), bs=$("#puertaSalir");
+  if(ACCESO===true){ p.hidden=true; return; }
+  p.hidden=false;
+  if(!USUARIO){
+    t.textContent="Entra con tu cuenta para continuar.";
+    be.hidden=false; bs.hidden=true;
+  }else{
+    t.textContent=`Tu cuenta (${USUARIO.email}) todavía no tiene ningún proyecto asignado. Pide que te inviten.`;
+    be.hidden=true; bs.hidden=false;
+  }
+}
+
 /* ============ sesión en la nube (Etapa 1) ============
    Solo entrar y salir. Todavía no sincroniza nada: eso es la Etapa 2.
    El módulo de abajo corre DESPUÉS que este script, así que aquí solo se deja el
@@ -2393,11 +2456,13 @@ function nubeUI(){
   if(!window.FB){
     be.hidden=true; bs.hidden=true;
     es.textContent="Sin nube: tus proyectos se guardan solo en este navegador.";
+    comprobarAcceso();          /* sin Firebase no hay a quién preguntar: se abre */
     return;
   }
   window.FB.alCambiar(u=>{
     USUARIO=u||null;
     be.hidden=!!u; bs.hidden=!u;
+    ACCESO=null; pintarPuerta(); comprobarAcceso();
     if(typeof estadoNubeUI==="function") estadoNubeUI();
     else es.textContent = u ? `Sesión: ${u.email}` : "Entra con Google para guardar tus proyectos en la nube.";
     if(typeof renderNube==="function") renderNube();
@@ -2405,6 +2470,9 @@ function nubeUI(){
     if(typeof aplicarModo==="function") aplicarModo();
     if(typeof sincronizarNube==="function") sincronizarNube();
   });
+  { const pe=$("#puertaEntrar"), ps=$("#puertaSalir");
+    if(pe) pe.onclick=()=>be.click();
+    if(ps) ps.onclick=()=>bs.click(); }
   const bn=$("#btnNube"); if(bn) bn.onclick=async()=>{ if(await nubeSubir()) renderNube(); };
   be.onclick=async()=>{
     be.disabled=true;
@@ -2415,6 +2483,25 @@ function nubeUI(){
   bs.onclick=async()=>{ try{ await window.FB.salir(); toast("Sesión cerrada"); }catch(_){} };
 }
 window.addEventListener("fb-listo", nubeUI);
+
+/* La firma de la estructura, sin los valores. Es lo que la regla compara para
+   permitir llenar pero no reorganizar: si cambia, es que tocaron los campos. */
+function defDeCampos(){
+  return JSON.stringify((S.campos||[]).map(c=>[c.clave,c.etiqueta,!!c.bloque]));
+}
+function aplicarPermisos(){
+  const of=(sel,ok)=>{ const e=$(sel); if(e) e.hidden=!ok; };
+  of("#btnPdf",      puedo("descargar"));
+  of("#btnHtml",     puedo("descargar"));
+  of("#btnExpCampos",puedo("exportar"));
+  of("#btnAddCampo", puedo("campos"));
+  of("#btnHacerCampo",puedo("campos"));
+  of("#btnNube",     puedo("guardar") && !!DOC && hayNube());
+  of("#btnInicioPdf",puedo("crear"));
+  of("#btnSubirPdf", puedo("crear"));
+  const av=$("#avisoPerm");
+  if(av) av.hidden = !PERM;
+}
 
 /* ============ nube: subir, listar, abrir (Etapa 2a) ============
    Reusa paqueteProyecto y montarProyecto sin tocarlos. El PDF NO va en el
@@ -2506,6 +2593,7 @@ async function empujarActual(silencioso){
   try{
     const d=paqueteProyecto(PROY_ACT.nombre,0); delete d.pdf;
     d.REEMP=JSON.stringify(REEMP);
+    d.camposDef=defDeCampos();
     await nubeEmpujar(PROY_ACT.id,PROY_ACT.nombre,d,DOC.bytes,!!e.pdfEnNube);
     if(!e.pdfEnNube) await marcarPdfEnNube(PROY_ACT.nombre);
     await desencolar(PROY_ACT.id);
@@ -2542,6 +2630,7 @@ async function nubeSubir(){
     /* Firestore no admite un array dentro de otro array, y REEMP es uno por
        página. Viaja como texto y se vuelve a armar al bajarlo. */
     d.REEMP=JSON.stringify(REEMP);
+    d.camposDef=defDeCampos();
     paso="subir el PDF";
     const ix=await leerProyectos(), ya=!!(ix[n]&&ix[n].pdfEnNube);
     await nubeEmpujar(id,n,d,DOC.bytes,ya);
@@ -2624,6 +2713,16 @@ async function nubeAbrir(id,uidDueno){
     const bytes=await window.FB.bajarPdf(uidDueno||d.dueno,id);
     await montarProyecto(d,bytes,{nombre:d.nombre,k:claveProy(d.nombre||id),id});
     PROY_ACT={nombre:d.nombre||id,k:claveProy(d.nombre||id),id};
+    /* permisos: null si el proyecto es tuyo, el mapa del correo si te lo comparten */
+    PERM = (d.dueno===USUARIO.uid || soyDuena()) ? null
+         : ((d.permisos||{})[(USUARIO.email||"").toLowerCase()] || {});
+    /* migración silenciosa: los proyectos subidos antes no traen camposDef, que
+       es lo que la regla compara para impedir tocar la estructura. Si eres la
+       dueña, se lo añadimos al vuelo. No hay que resubir nada a mano. */
+    if(!d.camposDef && (d.dueno===USUARIO.uid||soyDuena())){
+      try{ await window.FB.tocarDoc(id,{camposDef:defDeCampos()}); }catch(_){}
+    }
+    aplicarPermisos();
     await fijarIdProyecto(d.nombre||id,id,(d.paginas||0));
     rotuloGuardar();
   }catch(e){
@@ -2648,23 +2747,72 @@ async function nubeRenombrar(p){
   }catch(e){ console.error(e); toast("No pude renombrar: "+(e.code||"")); }
 }
 
+/* Comparte con siete interruptores independientes. `invitados` sigue siendo una
+   lista plana de correos porque es lo único que la regla puede consultar con
+   array-contains; `permisos` es el mapa con el detalle de cada uno. */
+function panelPermisos(correo,actual){
+  return new Promise(ok=>{
+    const m=$("#modal"), t=$("#mTitulo"), cont=m.querySelector(".mcuerpo")||m.firstElementChild;
+    const prev=$("#permBox"); if(prev) prev.remove();
+    t.textContent="Permisos de "+correo;
+    $("#mInput").hidden=true;
+    const box=document.createElement("div");
+    box.id="permBox"; box.style.cssText="display:flex;flex-direction:column;gap:7px;margin:10px 0;text-align:left";
+    box.innerHTML=CAPS.map(c=>{
+      const on=(actual&&actual[c.k]!==undefined)?actual[c.k]:c.def;
+      return `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" data-cap="${c.k}" ${on?"checked":""} style="margin-top:2px">
+        <span>${esc(c.t)}${c.real?"":' <span style="opacity:.55">(solo esconde el botón)</span>'}</span></label>`;
+    }).join("");
+    $("#mInput").insertAdjacentElement("afterend",box);
+    const cerrar=v=>{ box.remove(); $("#mInput").hidden=false;
+      $("#mOk").onclick=null; $("#mCancel").onclick=null;
+      m.classList.remove("on"); ok(v); };
+    $("#mOk").onclick=()=>{ const r={};
+      box.querySelectorAll("[data-cap]").forEach(i=>{ r[i.dataset.cap]=i.checked; });
+      cerrar(r); };
+    $("#mCancel").onclick=()=>cerrar(null);
+    m.classList.add("on");
+  });
+}
+
 async function nubeCompartir(p){
-  const actuales=(p.invitados||[]);
-  const txt=actuales.length? "Ahora comparten: "+actuales.join(", ") : "Todavía no lo comparte nadie";
-  const c=await askText(txt+"\n\nCorreo a invitar (vacío para quitar a alguien)","");
+  const inv=(p.invitados||[]), perms=(p.permisos||{});
+  const lista=inv.length? inv.map(c=>"· "+c).join("\n") : "Todavía no lo comparte nadie";
+  const c=await askText("Comparten:\n"+lista+"\n\nCorreo a invitar, o uno ya invitado para cambiarle los permisos","");
   if(c===null) return;
   const correo=(c||"").trim().toLowerCase();
+  if(!correo) return;
   try{
-    if(correo){
-      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ toast("Ese correo no parece válido"); return; }
-      await window.FB.invitar(p.id,correo);
-      toast("Invitado "+correo);
-    }else if(actuales.length){
-      const q=await askText("¿A quién quito?",actuales[0]);
-      if(!q) return;
-      await window.FB.desinvitar(p.id,q.trim().toLowerCase());
-      toast("Acceso retirado");
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ toast("Ese correo no parece válido"); return; }
+    const r=await panelPermisos(correo,perms[correo]);
+    if(!r) return;
+    /* sin "abrir" no hay acceso posible: desmarcarlo es la forma de retirarlo.
+       Antes esto se hacía dejando el campo vacío, pero askText devuelve null
+       igual que al cancelar, así que esa ruta no se alcanzaba nunca. */
+    if(!r.abrir){
+      const np={...perms}; delete np[correo];
+      await window.FB.desinvitar(p.id,correo);
+      await window.FB.tocarDoc(p.id,{permisos:np});
+      try{
+        const cfg=(await window.FB.leerConfig())||{};
+        await window.FB.guardarConfig({crear:(cfg.crear||[]).filter(x=>x!==correo)});
+      }catch(_){}
+      toast("Acceso retirado a "+correo);
+      renderNube(); return;
     }
+    const crear=!!r.crear; delete r.crear;          /* 'crear' es por cuenta, no por proyecto */
+    const np={...perms}; np[correo]=r;
+    await window.FB.invitar(p.id,correo);
+    await window.FB.tocarDoc(p.id,{permisos:np});
+    /* la lista global de quién puede crear proyectos propios */
+    try{
+      const cfg=(await window.FB.leerConfig())||{};
+      let l=(cfg.crear||[]).filter(x=>x!==correo);
+      if(crear) l.push(correo);
+      await window.FB.guardarConfig({crear:l});
+    }catch(e){ console.warn("config",e); toast("Permisos del proyecto guardados, pero no pude cambiar el de crear proyectos"); }
+    toast("Permisos guardados para "+correo);
     renderNube();
   }catch(e){ console.error(e); toast("No pude cambiar los permisos: "+(e.code||"")); }
 }
@@ -2760,6 +2908,8 @@ try{
     desinvitar:(id,correo)=>F.updateDoc(F.doc(db,"proyectos",id),
       {invitados:F.arrayRemove(correo), actualizado:Date.now()}),
     leerDoc:async id=>{ const s=await F.getDoc(F.doc(db,"proyectos",id)); return s.exists()?s.data():null; },
+    leerConfig:async()=>{ try{ const s=await F.getDoc(F.doc(db,"config","acceso")); return s.exists()?s.data():null; }catch(_){ return null; } },
+    guardarConfig:d=>F.setDoc(F.doc(db,"config","acceso"),d,{merge:true}),
     borrarDoc:id=>F.deleteDoc(F.doc(db,"proyectos",id)),
 
     /* Las reglas rechazan listar la colección sin filtro: Firestore solo autoriza
