@@ -1258,7 +1258,7 @@ async function planchaDe(page,vp,zonas){
      existía. En un PDF normal siempre se omite algo y todo sigue igual que antes. */
   return omitidos? c : null;
 }
-function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig){
+function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs){
   const campo=S.campos.find(f=>f.clave===r.clave);
   const nuevo=campo? String(campo.valor==null?"":campo.valor).trim() : "";
   const trozos=P.mapa.filter(m=>m.tIni<r.fin&&m.tFin>r.ini);
@@ -1298,7 +1298,7 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig){
     const tot=anchoDe(s)||1;
     const eA=it.x + it.w*(anchoDe(s.slice(0,a))/tot);
     const eB=it.x + it.w*(anchoDe(s.slice(0,b))/tot);
-    const cxM=(conPlancha&&cvOrig)? cvOrig.getContext("2d") : cx;   /* medir donde el texto viejo aún está */
+    const cxM=cvOrig? cvOrig.getContext("2d") : cx;   /* medir en el render original: ahí todo está en su sitio */
     let xa=xAjustado(cxM,vp,it,a,"ini",eA,alto);
     let xb=xAjustado(cxM,vp,it,b,"fin",eB,alto);
     const propio=it.w*((anchoDe(s.slice(0,b))-anchoDe(s.slice(0,a)))/tot);
@@ -1312,6 +1312,13 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig){
   /* El recuadro se deja CONSERVADOR (nunca invade la palabra anterior) y es
      bordeTinta() quien lo estira sobre los píxeles: se detiene solo en la primera
      columna en blanco, así traga el resto del dato viejo y nada más. */
+  /* si un dato anterior de este mismo renglón creció, todo lo que venía detrás se corrió:
+     este dato también está ahora más a la derecha */
+  const x1o=x1, x2o=x2;
+  const previas=(corrs||[]).filter(c=>Math.abs(c.base-base)<alto*0.6 && c.desde<=x1o+0.5);
+  const desp=previas.reduce((a,c)=>a+c.dx,0);
+  const baseD=base+previas.reduce((a,c)=>a+(c.dy||0),0);   /* hoja torcida: al correrse, también subió o bajó */
+  x1+=desp; x2+=desp;
   const xTexto=x1;                      /* el valor nuevo se dibuja donde empezaba el viejo */
   /* El recuadro medía 1.27 × la altura de letra. Con interlineado apretado eso
      invade el renglón de al lado y le borra un trozo. Se recorta con el espacio
@@ -1326,15 +1333,15 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig){
   });
   const sube=Math.max(alto*0.62, Math.min(alto*0.95, arr-alto*0.34));
   const baja=Math.max(alto*0.10, Math.min(alto*0.32, aba-alto*0.66));
-  const p1=vp.convertToViewportPoint(x1, base+sube);
-  const p2=vp.convertToViewportPoint(x2, base-baja);
+  const p1=vp.convertToViewportPoint(x1, baseD+sube);
+  const p2=vp.convertToViewportPoint(x2, baseD-baja);
   const rect={x:Math.min(p1[0],p2[0])-1, y:Math.min(p1[1],p2[1]),
               w:Math.abs(p2[0]-p1[0])+2, h:Math.abs(p2[1]-p1[1])};
   /* Con plancha el dato viejo ya no está: no se tapa nada, solo se escribe el
      nuevo. El color de tinta se muestrea del render original, donde sí está. */
   let tinta;
   if(conPlancha){
-    if(cvOrig){ const ox=cvOrig.getContext("2d"); tinta=tintaConFondo(ox,rect,fondoDe(ox,rect),tintaDe(ox,rect)); }
+    if(cvOrig){ const ox=cvOrig.getContext("2d"), r0={...rect,x:rect.x-desp*ESC}; tinta=tintaConFondo(ox,r0,fondoDe(ox,r0),tintaDe(ox,r0)); }
     else tinta="rgb(0,0,0)";
   }else{
     const fondo=fondoDe(cx,rect);
@@ -1349,22 +1356,86 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig){
     devolverGirados(cx,zonas,fondo,tinta);  /* y devolverla sin el texto viejo */
   }
   if(!nuevo) return;
-  /* si el texto original sigue pegado dentro del mismo fragmento, el hueco
-     disponible termina justo donde terminaba el dato viejo */
+  /* ---- EL DATO NUEVO CONSERVA EL TAMAÑO DE LETRA DEL ORIGINAL ----
+     Antes, si no cabía en el espacio del viejo, se achicaba. Ahora el tamaño no cambia:
+     si hace falta espacio, lo que sigue en ESE renglón se corre a la derecha lo justo
+     (como en un procesador de texto), con sus letras y su fondo reales. Solo si se
+     saldría de la hoja se achica, lo mínimo, como último recurso. */
   const ult=trozos[trozos.length-1];
-  const pegado = r.fin < ult.tFin;
-  let sig = pegado ? x2 : P.ancho;
-  if(!pegado) P.items.forEach(o=>{ if(o!==it0 && Math.abs(o.y-base)<alto*0.6 && o.x>x2-0.5) sig=Math.min(sig,o.x); });
-  const dispo=Math.max(12,sig-xTexto-1)*ESC;
-  let tam=(it0.h||10)*ESC;
+  const pegado = r.fin < ult.tFin;                  /* el renglón sigue pegado al dato */
+  const mismo=o=>Math.abs(o.y-base)<alto*0.6;
+  let sigO=pegado? x2o : Infinity;                   /* dónde empieza lo que sigue (coordenadas originales) */
+  if(!pegado) P.items.forEach(o=>{ if(o!==it0 && o.str && o.str.trim() && mismo(o) && o.x>x2o-0.5) sigO=Math.min(sigO,o.x); });
+  let finO=-Infinity; P.items.forEach(o=>{ if(o.str && o.str.trim() && mismo(o)) finO=Math.max(finO,o.x+o.w); });
+  const hayResto=sigO!==Infinity && finO>sigO;
+  const limite=(P.ancho||612)-4;                     /* borde derecho de la hoja */
+  const est={fam:/courier/i.test(fam)?"mono":/times/i.test(fam)?"serif":"sans", neg:!!neg, cur:!!cur};
+  const letras=!conPlancha? glifosDe(P.num) : null;
+  /* ancho del dato nuevo a su tamaño de siempre */
+  let W=null, conLetras=false;
+  if(letras){ try{ const m=dibujarConGlifos(cx,vp,ESC,letras,nuevo,est,it0.h||10,xTexto,baseD,Infinity,famR,tinta,true);
+    if(m){ W=m.ancho; conLetras=true; } }catch(e){ console.warn("letras de la hoja",e); } }
+  if(W===null){ cx.font=`${cur}${neg}${(it0.h||10)*ESC}px ${famR}`; W=cx.measureText(nuevo).width/ESC; }
+  /* ¿cuánto hay que correr lo que sigue? se respeta el espacio que había entre los dos */
+  let corre=0, kf=1;
+  if(hayResto){
+    const hueco=pegado? 0 : Math.min(sigO-x2o, alto*0.35);
+    corre=Math.max(0, xTexto+W+hueco-(sigO+desp));
+    const tope=Math.max(0, limite-(finO+desp));
+    if(corre>tope){ corre=tope; kf=Math.max(0.37,Math.min(1,((sigO+desp+corre)-hueco-xTexto)/W)); }
+  }else{
+    if(xTexto+W>limite) kf=Math.max(0.37,Math.min(1,(limite-xTexto)/W));
+  }
+  if(corre>0.2){
+    const pA=vp.convertToViewportPoint(sigO+desp-0.5, baseD+sube), pB=vp.convertToViewportPoint(finO+desp+1, baseD-baja);
+    const pv=letras? pendienteRenglon(letras,{x:pA[0]/ESC,y:vp.convertToViewportPoint(xTexto,base)[1]/ESC},it0.h||10) : 0;
+    correrRenglon(cx,{x:Math.min(pA[0],pB[0]),y:Math.min(pA[1],pB[1]),w:Math.abs(pB[0]-pA[0]),h:Math.abs(pB[1]-pA[1])},corre*ESC,pv*corre*ESC);
+    const q0=vp.convertToPdfPoint(0,0), q1=vp.convertToPdfPoint(0,pv*corre*ESC);
+    if(corrs) corrs.push({base, desde:sigO-0.01, dx:corre, dy:q1[1]-q0[1]});
+  }else corre=0;
+  const cor=corre? {base, desde:sigO-0.01, dx:corre} : null;
+  if(conLetras){ try{
+    const g=dibujarConGlifos(cx,vp,ESC,letras,nuevo,est,it0.h||10,xTexto,baseD,W*kf*ESC+0.5,famR,tinta);
+    if(g) return {texto:nuevo, x:xTexto, y:base, tam:g.tam, ancho:g.ancho, fam, neg:!!neg, cur:!!cur, corr:cor};
+  }catch(e){ console.warn("letras de la hoja",e); } }
+  const tam=(it0.h||10)*ESC*kf;
   cx.textBaseline="alphabetic"; cx.fillStyle=tinta;
   cx.font=`${cur}${neg}${tam}px ${famR}`;
-  let k=0;
-  while(cx.measureText(nuevo).width>dispo && k++<16){ tam*=0.94; cx.font=`${cur}${neg}${tam}px ${famR}`; }
-  const b=vp.convertToViewportPoint(xTexto, base);
+  const b=vp.convertToViewportPoint(xTexto, baseD);
   cx.fillText(nuevo,b[0],b[1]);
   /* lo que se dibujó y dónde: el PDF exportado escribe ese mismo texto, invisible, encima */
-  return {texto:nuevo, x:xTexto, y:base, tam:tam/ESC, ancho:cx.measureText(nuevo).width/ESC, fam, neg:!!neg, cur:!!cur};
+  return {texto:nuevo, x:xTexto, y:base, tam:tam/ESC, ancho:cx.measureText(nuevo).width/ESC, fam, neg:!!neg, cur:!!cur, corr:cor};
+}
+/* Corre a la derecha lo que hay en un tramo de renglón: se recortan sus letras (sin el
+   papel), se borran de su sitio reconstruyendo el fondo y se pegan dx píxeles más allá. */
+function correrRenglon(cx,R,dx,dy){
+  const X0=Math.max(0,Math.floor(R.x)), Y0=Math.max(0,Math.floor(R.y));
+  const W=Math.min(cx.canvas.width-X0,Math.ceil(R.x+R.w)-X0), H=Math.min(cx.canvas.height-Y0,Math.ceil(R.y+R.h)-Y0);
+  if(W<2||H<2) return false;
+  const m=mascaraGlifo(cx,X0,Y0,W,H); if(!m) return true;          /* no hay letras que correr */
+  const t="rgb("+m.tinta.join(",")+")";
+  const liso=papelLiso(cx,X0,Y0,W,H);       /* papel de un solo color: se repinta igual, sin reconstruir (rápido y exacto) */
+  if(liso){ cx.fillStyle=liso; cx.fillRect(X0,Y0,W,H); }
+  else if(!rellenarFondo(cx,{x:X0,y:Y0,w:W,h:H},t)){ const f=fondoDe(cx,{x:X0,y:Y0,w:W,h:H}); cx.fillStyle=f; cx.fillRect(X0,Y0,W,H); }
+  cx.drawImage(m.canvas,X0+dx,Y0+(dy||0));
+  return true;
+}
+/* ¿El papel de este tramo es de un solo color? Se aparta la tinta (y 2 px de su borde
+   suave); si todo lo demás no se aleja más de 6 niveles del color del papel, devuelve
+   ese color. Con grano, degradado o dibujo devuelve null y se reconstruye el fondo. */
+function papelLiso(cx,x0,y0,w,h){
+  let D; try{ D=cx.getImageData(x0,y0,w,h).data; }catch(_){ return null; }
+  const N=w*h, bs=[[],[],[]], mete=k=>{ bs[0].push(D[k]); bs[1].push(D[k+1]); bs[2].push(D[k+2]); };
+  for(let x=0;x<w;x++){ mete(x*4); mete(((h-1)*w+x)*4); }
+  for(let y=1;y<h-1;y++){ mete(y*w*4); mete((y*w+w-1)*4); }
+  const med=a=>{ a.sort((p,q)=>p-q); return a[a.length>>1]; };
+  const bg=[med(bs[0]),med(bs[1]),med(bs[2])], dif=new Uint8Array(N);
+  for(let i=0;i<N;i++){ const k=i*4; dif[i]=Math.max(Math.abs(D[k]-bg[0]),Math.abs(D[k+1]-bg[1]),Math.abs(D[k+2]-bg[2])); }
+  const tin=new Uint8Array(N), cer=new Uint8Array(N);          /* tinta, ensanchada 2 px (primero a lo ancho, luego a lo alto) */
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){ let v=0; for(let q=-2;q<=2&&!v;q++){ const xx=x+q; if(xx>=0&&xx<w&&dif[y*w+xx]>12) v=1; } tin[y*w+x]=v; }
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){ let v=0; for(let j=-2;j<=2&&!v;j++){ const yy=y+j; if(yy>=0&&yy<h&&tin[yy*w+x]) v=1; } cer[y*w+x]=v; }
+  for(let i=0;i<N;i++) if(!cer[i] && dif[i]>6) return null;
+  return `rgb(${bg[0]},${bg[1]},${bg[2]})`;
 }
 function imprimirHojas(hojas){
   const w0=Math.round(hojas[0].w), h0=Math.round(hojas[0].h);
@@ -1432,7 +1503,7 @@ function cssDeEstilo(e,viva){
    no cambió va en su sitio de siempre; cada dato nuevo va exactamente donde lo
    dibujó pintarCambio, con su tamaño y su ancho. Se pasa por el viewport para que
    páginas giradas o con origen corrido queden bien. */
-function capaTexto(page,P,vp,lista,geos){
+function capaTexto(page,P,vp,lista,geos,corrs){
   const E=vp.scale||1, H=vp.height/E, out=[];
   const aHoja=(x,y)=>{ const p=vp.convertToViewportPoint(x,y); return [p[0]/E, H-p[1]/E]; };
   const marco=(x,y)=>{
@@ -1466,7 +1537,9 @@ function capaTexto(page,P,vp,lista,geos){
     const pieza=(a,b)=>{
       if(b<=a) return;
       const x0=xEn(a), x1=xEn(b);
-      out.push({t:s.slice(a,b), m:marco(x0,it.y), tam, ancho:Math.max(0,x1-x0), f});
+      /* si un dato anterior del renglón creció, lo que venía detrás se corrió en la hoja */
+      const dx=(corrs||[]).reduce((s2,c)=>s2+((Math.abs(c.base-it.y)<tam*0.6 && c.desde<=x0+0.01)? c.dx : 0),0);
+      out.push({t:s.slice(a,b), m:marco(x0+dx,it.y), tam, ancho:Math.max(0,x1-x0), f});
     };
     const cortes=tramos.filter(r=>r.ini<m.tFin&&r.fin>m.tIni)
       .map(r=>({r, a:Math.max(r.ini,m.tIni)-m.tIni, b:Math.min(r.fin,m.tFin)-m.tIni}))
@@ -1600,9 +1673,11 @@ async function exportarIgual(op){
         cv.getContext("2d").drawImage(orig,0,0);
       }
       const cx=cv.getContext("2d");
-      const geos=new Map();                     /* por cada tramo: qué se escribió y dónde */
-      lista.forEach(r=>{ try{ geos.set(r,pintarCambio(cx,vp,page,P,r,ESC,conPl,orig)); }catch(_){} });
-      let capa=[]; try{ capa=capaTexto(page,P,vp,lista,geos); }catch(e){ console.error(e); capa=[]; }
+      if(!conPl && lista.length){                 /* hoja-imagen: se usan sus propias letras */
+        btn.textContent="Preparando letras…"; try{ await asegurarGlifos(P.num); }catch(_){} btn.textContent="Armando…"; }
+      const geos=new Map(), corrs=[];           /* por cada tramo: qué se escribió y dónde */
+      [...lista].sort((a,b)=>a.ini-b.ini).forEach(r=>{ try{ geos.set(r,pintarCambio(cx,vp,page,P,r,ESC,conPl,orig,corrs)); }catch(_){} });
+      let capa=[]; try{ capa=capaTexto(page,P,vp,lista,geos,corrs); }catch(e){ console.error(e); capa=[]; }
       hojas.push({url:cv.toDataURL("image/png"), w:vp.width/ESC, h:vp.height/ESC, capa});
     }
     if(op&&op.imprimir){ imprimirHojas(hojas); return; }        /* el respaldo, pedido a mano */
@@ -2348,8 +2423,9 @@ function estiloPalabra(cx,w,pend){
 function mayoria(l,def){ const s=l.filter(x=>x!==null&&x!==undefined); if(!s.length) return def;
   return s.filter(Boolean).length*2>s.length; }
 function palabrasOcr(cx,blocks){
-  const out=[], F=["sans","serif","mono"];
+  const out=[], F=["sans","serif","mono"]; let nl=0;
   (blocks||[]).forEach(bk=>(bk.paragraphs||[]).forEach(pa=>(pa.lines||[]).forEach(l=>{
+    const lin=nl++;
     /* fuera las "palabras" fantasma: una raya más alta que ancha (manchas del papel) o
        un signo suelto que el lector no ve claro. Corren la posición de lo que sigue. */
     const ws=(l.words||[]).filter(w=>{
@@ -2394,7 +2470,7 @@ function palabrasOcr(cx,blocks){
     ws.forEach((w,i)=>{
       const tm=tams[i], tam=(tm && Math.abs(tm-tamL)/tamL>0.25)? tm : tamL;
       out.push({t:String(w.text).trim(), x0:w.bbox.x0, x1:w.bbox.x1, b0:baseEn(w.bbox.x0), b1:baseEn(w.bbox.x1),
-                tam, fam:fams[i]||famL, cur:curs[i]??curL, neg:negs[i]??negL});
+                tam, fam:fams[i]||famL, cur:curs[i]??curL, neg:negs[i]??negL, lin, sim:w.symbols||[]});
     });
   })));
   return out;
@@ -2438,7 +2514,8 @@ async function ocrPaginas(bytes,T,L,aviso){
       const {data}=await lector.recognize(cv,{},{blocks:true});
       const palabras=palabrasOcr(cx,data&&data.blocks);
       total+=palabras.length;
-      hojas.push({n, vp, palabras, url: doc? null : cv.toDataURL("image/jpeg",0.92)});
+      let letras=null; try{ letras=libreriaGlifos(cx,vp.scale,palabras); }catch(e){ console.warn("letras",e); }
+      hojas.push({n, vp, palabras, letras, url: doc? null : cv.toDataURL("image/jpeg",0.92)});
       cv.width=cv.height=0;                               /* suelta la memoria del lienzo */
     }
     return {doc, hojas, total};
@@ -2469,9 +2546,273 @@ async function leerFoto(bytes,aviso){
     if(aviso) aviso("Armando…");
     const nuevos=await pdfConLetras(o,L);
     const buf=nuevos.buffer.slice(nuevos.byteOffset,nuevos.byteOffset+nuevos.byteLength);
+    try{ registrarGlifos(huellaBytes(buf),o.hojas); }catch(_){}
     const r=await leerPdf({arrayBuffer:()=>Promise.resolve(buf)});
     return r.texto.trim()? {r} : {};
   }catch(e){ console.error(e); return {error:"No pude leer la foto de este PDF"}; }
+}
+
+/* ============ letras de la misma hoja (Parte 3) ============
+   En un PDF que es imagen no hay fuente que usar: la letra es un dibujo. Así que
+   se recortan las letras REALES de la hoja —cada una con su tinta, su borde y su
+   borroso— y el dato nuevo se arma con ellas, sobre la misma línea base y con el
+   espaciado medido en el propio documento. Una letra con tilde que falte (Ú) se
+   arma con la letra base (U) y la tilde de otra letra de la hoja (É). La fuente
+   parecida queda solo para lo que no aparece en ninguna parte de la hoja.
+   Coordenadas: "u" = unidades de la página a escala 1 (vista, origen arriba). */
+const GLIFOS=new Map();              /* huella del PDF → {número de hoja: {lib, prom}} */
+let colaGlifos=Promise.resolve(), avisoLetras=null;
+function claveDoc(){ return DOC&&DOC.bytes? (DOC.__clave||(DOC.__clave=huellaBytes(DOC.bytes))) : null; }
+function registrarGlifos(clave,hojas){
+  const g={}; (hojas||[]).forEach(h=>{ if(h.letras) g[h.n]={lib:h.letras, prom:Promise.resolve(h.letras)}; });
+  GLIFOS.set(clave,g);
+  while(GLIFOS.size>4) GLIFOS.delete(GLIFOS.keys().next().value);
+}
+/* la letra recortada: el papel se vuelve transparente y queda solo la tinta, con
+   su borde suave (el centro conserva el color real del escaneo) */
+function mascaraGlifo(cx,x0,y0,w,h){
+  let D; try{ D=cx.getImageData(x0,y0,w,h).data; }catch(_){ return null; }
+  const bs=[[],[],[]], mete=k=>{ bs[0].push(D[k]); bs[1].push(D[k+1]); bs[2].push(D[k+2]); };
+  for(let x=0;x<w;x++){ mete(x*4); mete(((h-1)*w+x)*4); }
+  for(let y=1;y<h-1;y++){ mete(y*w*4); mete((y*w+w-1)*4); }
+  const med=a=>{ a.sort((p,q)=>p-q); return a[a.length>>1]; };
+  const bg=[med(bs[0]),med(bs[1]),med(bs[2])], N=w*h, d=new Float32Array(N);
+  let dm=0;
+  for(let i=0;i<N;i++){ const k=i*4; d[i]=Math.sqrt(((D[k]-bg[0])**2+(D[k+1]-bg[1])**2+(D[k+2]-bg[2])**2)/3); if(d[i]>dm) dm=d[i]; }
+  if(dm<35) return null;
+  const T=[0,0,0]; let n=0;
+  for(let i=0;i<N;i++) if(d[i]>0.7*dm){ const k=i*4; T[0]+=D[k]; T[1]+=D[k+1]; T[2]+=D[k+2]; n++; }
+  T[0]/=n; T[1]/=n; T[2]/=n;
+  const ev=[T[0]-bg[0],T[1]-bg[1],T[2]-bg[2]], ee=ev[0]*ev[0]+ev[1]*ev[1]+ev[2]*ev[2]||1;
+  const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+  const q=cv.getContext("2d"), out=q.createImageData(w,h), O=out.data;
+  for(let i=0;i<N;i++){ const k=i*4;
+    const t=((D[k]-bg[0])*ev[0]+(D[k+1]-bg[1])*ev[1]+(D[k+2]-bg[2])*ev[2])/ee;
+    const a=Math.max(0,Math.min(1,(t-0.08)/0.84)); if(a<=0) continue;
+    if(a>0.85){ O[k]=D[k]; O[k+1]=D[k+1]; O[k+2]=D[k+2]; } else { O[k]=T[0]; O[k+1]=T[1]; O[k+2]=T[2]; }
+    O[k+3]=Math.round(a*255); }
+  q.putImageData(out,0,0);
+  return {canvas:cv, tinta:T.map(Math.round)};
+}
+/* Medidas de un recorte frente a la letra dibujada en la familia detectada:
+   fr = parecido de la forma (estirada a la misma caja), ar = diferencia de
+   proporción, sd = diferencia de tamaño real (se conoce el tamaño de la palabra),
+   nw/nh = ancho y alto de la tinta divididos por el tamaño de letra. */
+function formaGlifo(canvas,c,p){
+  try{
+    const w=canvas.width, h=canvas.height, A=canvas.getContext("2d").getImageData(0,0,w,h).data;
+    const m=new Uint8Array(w*h); let x0=w,y0=h,x1=-1,y1=-1;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(A[(y*w+x)*4+3]>128){ m[y*w+x]=1; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    if(x1<0) return null;
+    const M=tintaDibujada(c,{fam:p.fam,neg:!!p.neg,cur:!!p.cur}); if(!M) return null;
+    const R={m,an:w,al:h,x0,y0,x1,y1};
+    const rw=x1-x0+1, rh=y1-y0+1, mw=M.x1-M.x0+1, mh=M.y1-M.y0+1;
+    const GW=Math.max(8,Math.min(60,Math.round(20*rw/rh))), GH=20, a=new Uint8Array(GW*GH);
+    rejilla(R,GW,GH,(i,j,v)=>{ a[j*GW+i]=v; });
+    let y=0,u=0; rejilla(M,GW,GH,(i,j,v)=>{ const r=a[j*GW+i]; if(r&&v) y++; if(r||v) u++; });
+    const ew=mw*p.tam/60, eh=mh*p.tam/60;
+    return {fr:u? y/u : 0, ar:Math.abs(Math.log(((rw+1)/(rh+1))/((ew+1)/(eh+1)))),
+            sd:Math.max(Math.abs(Math.log((rw+1)/(ew+1))),Math.abs(Math.log((rh+1)/(eh+1)))), nw:rw/p.tam, nh:rh/p.tam};
+  }catch(_){ return null; }
+}
+function libreriaGlifos(cx,E,palabras){
+  const grupos={}, gL={}, gE={}, pares={}, pasos={};
+  palabras.forEach((p,pi)=>{
+    const k=p.fam+(p.neg?"b":"")+(p.cur?"i":"");
+    const sims=(p.sim||[]).filter(s=>s&&s.bbox&&[...String(s.text||"")].length===1&&!(s.confidence<75));
+    const baseEn=x=> p.x1>p.x0? p.b0+(p.b1-p.b0)*(x-p.x0)/(p.x1-p.x0) : p.b0;
+    for(let i=0;i+1<sims.length;i++){ const g=(sims[i+1].bbox.x0-sims[i].bbox.x1)/p.tam; if(g>-0.08&&g<0.35){ (gL[k]=gL[k]||[]).push(g);
+      /* el espacio de cada PAR de letras tal como está en el documento ("80", "de", "ÑE") */
+      const pk=sims[i].text+sims[i+1].text+"|"+k; (pares[pk]=pares[pk]||[]).push(g); }
+      /* los números casi siempre van a paso fijo (todas las cifras miden lo mismo, para
+         que las columnas cuadren): se mide ese paso de centro a centro */
+      if(/^\d$/.test(sims[i].text)&&/^\d$/.test(sims[i+1].text)){
+        const c0=(sims[i].bbox.x0+sims[i].bbox.x1)/2, c1=(sims[i+1].bbox.x0+sims[i+1].bbox.x1)/2, pa=(c1-c0)/p.tam;
+        if(pa>0.3&&pa<0.9) (pasos[k]=pasos[k]||[]).push(pa); } }
+    const q=palabras[pi+1]; if(q&&q.lin===p.lin){ const g=(q.x0-p.x1)/p.tam; if(g>0.05&&g<1.2) (gE[k]=gE[k]||[]).push(g); }
+    sims.forEach((s,i)=>{ const b=s.bbox, wi=b.x1-b.x0, hi=b.y1-b.y0;
+      if(wi<1||hi<1||wi>p.tam*2.5||hi>p.tam*2.5) return;
+      const m=mascaraGlifo(cx,Math.max(0,b.x0-1),Math.max(0,b.y0-1),wi+3,hi+3); if(!m) return;
+      const bs=baseEn((b.x0+b.x1)/2), c=s.text;
+      /* El lector marca la caja de cada letra de forma aproximada: a veces se traga la
+         vecina ("Me" anotada como "e", "00" como "0", "a." como "."). Cada recorte se
+         compara con la forma de la letra que dice ser; si no se parece, no se usa. */
+      const f=formaGlifo(m.canvas,c,p); if(!f) return;
+      const e={c,fam:p.fam,neg:!!p.neg,cur:!!p.cur,tam:p.tam/E,wi:wi/E,arriba:(bs-(b.y0-1))/E,x:b.x0/E,y:bs/E,
+        izq:i>0?(b.x0-sims[i-1].bbox.x1)/p.tam:null, der:i+1<sims.length?(sims[i+1].bbox.x0-b.x1)/p.tam:null,
+        conf:s.confidence,f,forma:f.fr-0.3*f.ar,tinta:m.tinta,mask:m.canvas,E};
+      const g=c+"|"+k+"|"+Math.round(e.tam); (grupos[g]=grupos[g]||[]).push(e);
+    });
+  });
+  const med=a=>{ const b=a.slice().sort((x,y)=>x-y); return b[b.length>>1]; };
+  /* Cada recorte se comprueba de dos formas. 1) Contra sus hermanos: la misma letra en
+     el mismo estilo mide casi lo mismo en toda la hoja; el que se sale (un "00" anotado
+     como "0", un "Me" como "e") se descarta. 2) Contra la letra dibujada: la forma no
+     puede ser otra, ni la proporción doblarse (un punto no es un guion). Si hay pocos
+     hermanos, pesa más el tamaño esperado. */
+  const porLetra={};
+  for(const g in grupos) grupos[g].forEach(e=>{ const k=e.c+"|"+e.fam+(e.neg?"b":"")+(e.cur?"i":""); (porLetra[k]=porLetra[k]||[]).push(e); });
+  for(const k in porLetra){
+    const l=porLetra[k], mw=med(l.map(e=>e.f.nw)), mh=med(l.map(e=>e.f.nh));
+    const signo=/[\p{P}\p{S}]/u.test(l[0].c);
+    l.forEach(e=>{ const f=e.f;
+      let ok=f.fr>=0.35 && f.ar<=(signo?0.5:0.8);
+      if(ok && l.length>=3) ok=Math.max(Math.abs(Math.log(f.nw/mw)),Math.abs(Math.log(f.nh/mh)))<=0.3;
+      else if(ok) ok=f.sd<=0.55;
+      e.malo=!ok; });
+  }
+  for(const g in grupos){ grupos[g]=grupos[g].filter(e=>!e.malo); if(!grupos[g].length) delete grupos[g]; }
+  /* espacio típico a cada lado de cada letra (por estilo), medido solo entre letras
+     que pasaron la prueba de forma: así una caja mal marcada no descuadra nada */
+  const lados={};
+  for(const g in grupos) grupos[g].forEach(e=>{ const k=e.c+"|"+e.fam+(e.neg?"b":"")+(e.cur?"i":""); const L=lados[k]=lados[k]||{i:[],d:[]};
+    if(e.izq!=null&&e.izq>-0.08&&e.izq<0.35) L.i.push(e.izq); if(e.der!=null&&e.der>-0.08&&e.der<0.35) L.d.push(e.der); });
+  for(const k in lados){ const L=lados[k]; lados[k]={i:L.i.length?med(L.i):null, d:L.d.length?med(L.d):null}; }
+  /* se guardan hasta 6 ejemplares por letra, estilo y tamaño: los de mejor forma */
+  const ent={};
+  for(const g in grupos){ const l=grupos[g].sort((a,b)=>(b.forma-a.forma)||(b.conf-a.conf)).slice(0,6);
+    l.forEach(e=>{ const L=lados[e.c+"|"+e.fam+(e.neg?"b":"")+(e.cur?"i":"")]||{}; e.izq=L.i??null; e.der=L.d??null; });
+    (ent[l[0].c]=ent[l[0].c]||[]).push(...l); }
+  const gapL={}, gapE={}; for(const k in gL) gapL[k]=med(gL[k]); for(const k in gE) gapE[k]=med(gE[k]);
+  const todos=a=>{ const l=Object.values(a).flat(); return l.length? med(l) : null; };
+  for(const pk in pares) pares[pk]=med(pares[pk]);
+  const pasoDig={}; for(const k in pasos) if(pasos[k].length>=3) pasoDig[k]=med(pasos[k]);
+  return {ent, gapL, gapE, pares, pasoDig, gapL0:todos(gL)??0.07, gapE0:todos(gE)??0.3};
+}
+/* Se leen las letras de una hoja que aún no las tiene (un proyecto abierto otro día,
+   o un PDF que salió de aquí sin su proyecto). Una hoja a la vez, en segundo plano. */
+async function leerLetrasHoja(bytes,num){
+  const T=await cargarOcr(), lib=await cargarPdfJs();
+  const pdf=await lib.getDocument({data:bytes.slice(0)}).promise;
+  let lector=null;
+  try{
+    const page=await pdf.getPage(num), v1=page.getViewport({scale:1});
+    const vp=page.getViewport({scale:Math.min(ESC_OCR,4200/Math.max(v1.width,v1.height))});
+    const cv=document.createElement("canvas"); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+    const cx=cv.getContext("2d",{willReadFrequently:true});
+    cx.fillStyle="#fff"; cx.fillRect(0,0,cv.width,cv.height);
+    await page.render({canvasContext:cx,viewport:vp}).promise;
+    lector=await crearLector(T);
+    const {data}=await lector.recognize(cv,{},{blocks:true});
+    const letras=libreriaGlifos(cx,vp.scale,palabrasOcr(cx,data&&data.blocks));
+    cv.width=cv.height=0;
+    return letras;
+  }finally{
+    if(lector){ try{ await lector.terminate(); }catch(_){} }
+    try{ pdf.destroy(); }catch(_){}
+  }
+}
+function pedirGlifos(num){
+  const k=claveDoc(); if(!k) return null;
+  let g=GLIFOS.get(k); if(!g){ g={}; GLIFOS.set(k,g); while(GLIFOS.size>4) GLIFOS.delete(GLIFOS.keys().next().value); }
+  if(!g[num]){
+    const bytes=DOC.bytes, s={lib:null,prom:null}; g[num]=s;
+    s.prom=colaGlifos.then(()=>leerLetrasHoja(bytes,num)).then(l=>{ s.lib=l;
+      if(l && claveDoc()===k){ pedirPrevia();
+        if(avisoLetras!==k){ avisoLetras=k; toast("Listo: los datos nuevos usan las letras de tu propio documento"); } }
+      return l; }).catch(e=>{ console.warn("letras de la hoja",e); return null; });
+    colaGlifos=s.prom.catch(()=>null);
+  }
+  return g[num];
+}
+function glifosDe(num){ const s=pedirGlifos(num); return s&&s.lib; }
+async function asegurarGlifos(num){ const s=pedirGlifos(num); return s? await s.prom : null; }
+/* el mejor ejemplar de una letra: mismo estilo, tamaño parecido, color parecido y,
+   si se puede, del mismo renglón */
+function elegirGlifo(lib,c,est,T,pos,Ti){
+  const l=lib.ent[c]; if(!l) return null;
+  let mejor=null, pm=Infinity;
+  for(const e of l){
+    let p=0;
+    if(e.fam!==est.fam) p+=100; if(e.neg!==est.neg) p+=60; if(e.cur!==est.cur) p+=60;
+    p+=Math.abs(Math.log(e.tam/T))*40;
+    p+=Math.abs(e.y-pos.y)<T*0.6? 0 : Math.min(8,Math.hypot(e.x-pos.x,e.y-pos.y)/(T*12));
+    if(Ti) p+=Math.min(20,Math.hypot(e.tinta[0]-Ti[0],e.tinta[1]-Ti[1],e.tinta[2]-Ti[2])/12);
+    p+=(100-e.conf)*0.05+(1-(e.forma??0.5))*15;
+    if(p<pm){ pm=p; mejor=e; }
+  }
+  return pm<50? mejor : null;
+}
+/* la tilde (o virgulilla, o diéresis) de una letra: lo que está arriba, separado del
+   cuerpo por al menos una fila sin tinta */
+function recorteAcento(e){
+  const m=e.mask, w=m.width, h=m.height; let D;
+  try{ D=m.getContext("2d").getImageData(0,0,w,h).data; }catch(_){ return null; }
+  const fila=y=>{ for(let x=0;x<w;x++) if(D[(y*w+x)*4+3]>60) return true; return false; };
+  let y=0; while(y<h&&!fila(y)) y++; const y0=y;
+  while(y<h&&fila(y)) y++; const y1=y;
+  let yb=y; while(yb<h&&!fila(yb)) yb++;
+  if(y0>=h||y1>=h||yb>=h||yb===y1||y1-y0<1) return null;
+  let x0=w,x1=-1; for(let yy=y0;yy<y1;yy++) for(let x=0;x<w;x++) if(D[(yy*w+x)*4+3]>60){ if(x<x0)x0=x; if(x>x1)x1=x; }
+  if(x1<x0) return null;
+  const c=document.createElement("canvas"); c.width=x1-x0+1; c.height=y1-y0;
+  c.getContext("2d").drawImage(m,x0,y0,c.width,c.height,0,0,c.width,c.height);
+  return {canvas:c, dx:(x0+x1+1)/2-1-e.wi*e.E/2, arriba:(e.arriba*e.E-y0), E:e.E, tam:e.tam};
+}
+function acentoDe(lib,ch,est,T,pos,Ti){
+  const d=[...ch.normalize("NFD")]; if(d.length!==2) return null;
+  const base=elegirGlifo(lib,d[0],est,T,pos,Ti); if(!base) return null;
+  const mayus=ch!==ch.toLowerCase();
+  for(const c in lib.ent){ const dd=[...c.normalize("NFD")]; if(dd.length!==2||dd[1]!==d[1]) continue;
+    if((c!==c.toLowerCase())!==mayus) continue;
+    const e=elegirGlifo(lib,c,est,T,pos,Ti); if(!e) continue;
+    const a=recorteAcento(e); if(a) return {base, acento:a}; }
+  return null;
+}
+/* inclinación del renglón en el escaneo (u por u), sacada de las letras de ese mismo
+   renglón: el dato nuevo la sigue, como la sigue el texto de al lado */
+function pendienteRenglon(lib,pos,T){
+  const p=[]; for(const c in lib.ent) for(const e of lib.ent[c]) if(Math.abs(e.y-pos.y)<T*0.7) p.push([e.x,e.y]);
+  if(p.length<4) return 0;
+  const mx=p.reduce((a,q)=>a+q[0],0)/p.length, my=p.reduce((a,q)=>a+q[1],0)/p.length;
+  let sxy=0,sxx=0; p.forEach(([x,y])=>{ sxy+=(x-mx)*(y-my); sxx+=(x-mx)**2; });
+  if(sxx<T*T*4) return 0;
+  return Math.max(-0.03,Math.min(0.03,sxy/sxx));
+}
+function dibujarConGlifos(cx,vp,ESC,lib,texto,est,T,xTexto,base,dispo,fuenteCss,tinta,soloMedir){
+  const k=est.fam+(est.neg?"b":"")+(est.cur?"i":"");
+  const gL=lib.gapL[k]??lib.gapL0, gE=lib.gapE[k]??lib.gapE0;
+  const p0=vp.convertToViewportPoint(xTexto,base), pos={x:p0[0]/ESC, y:p0[1]/ESC};
+  const Ti=(String(tinta).match(/\d+/g)||[]).slice(0,3).map(Number);
+  const letra=px=>`${est.cur?"italic ":""}${est.neg?"bold ":""}${Math.max(1,px)}px ${fuenteCss}`;
+  cx.save(); cx.font=letra(T);
+  const piezas=[]; let x=0, prev=null, prevC="", prevCentro=0, faltan=0, total=0;
+  for(const ch of texto){
+    if(/\s/.test(ch)){ x+=gE*T; prev=null; continue; }
+    total++;
+    const e=elegirGlifo(lib,ch,est,T,pos,Ti.length===3?Ti:null);
+    const a=e? null : acentoDe(lib,ch,est,T,pos,Ti.length===3?Ti:null);
+    const g=e||(a&&a.base);
+    /* una letra que no está en la hoja se toma de la fuente parecida; su ancho ya trae
+       sus propios márgenes, así que a cada lado va solo medio espacio de letra */
+    if(!g){ faltan++; if(prev) x+=gL*T*0.5; piezas.push({f:ch,x}); x+=cx.measureText(ch).width; prev={fb:true}; prevC=ch; continue; }
+    const s=T/g.tam;
+    const paso=lib.pasoDig&&lib.pasoDig[k];
+    if(prev&&!prev.fb&&paso&&/^\d$/.test(prevC)&&/^\d$/.test(ch)){
+      x=prevCentro+paso*T-g.wi*s/2;                        /* cifra tras cifra: paso fijo */
+    }else if(prev){ const par=lib.pares&&lib.pares[prevC+ch+"|"+k];
+      x+=(prev.fb? gL*0.5 : par!=null? par : (prev.der!=null&&g.izq!=null)? (prev.der+g.izq)/2 : gL)*T; }
+    piezas.push({e:g, ac:a&&a.acento, x, s}); prevCentro=x+g.wi*s/2; x+=g.wi*s; prev=g; prevC=ch;
+  }
+  cx.restore();
+  /* si faltan muchas letras, se ve mejor todo con la fuente parecida que mezclado */
+  if(!total || faltan/total>0.25) return null;
+  if(soloMedir) return {ancho:x, tam:T};             /* solo cuánto mide, sin dibujar */
+  const kf=x*ESC>dispo? Math.max(0.37,dispo/(x*ESC)) : 1;
+  const bx=p0[0], by0=p0[1], pend=pendienteRenglon(lib,pos,T);
+  cx.save(); cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality="high";
+  for(const p of piezas){
+    const by=by0+pend*p.x*ESC*kf;                     /* sigue la inclinación del renglón */
+    if(p.f!==undefined){ cx.fillStyle=tinta; cx.textBaseline="alphabetic"; cx.font=letra(T*ESC*kf); cx.fillText(p.f,bx+p.x*ESC*kf,by); continue; }
+    const f=p.s*kf*ESC/p.e.E;                         /* px del destino por px de la letra recortada */
+    const gx=bx+p.x*ESC*kf-f, gy=by-p.e.arriba*p.s*kf*ESC;
+    cx.drawImage(p.e.mask,gx,gy,p.e.mask.width*f,p.e.mask.height*f);
+    if(p.ac){ const A=p.ac, fa=(T/A.tam)*kf*ESC/A.E;
+      const cxm=gx+f+p.e.wi*p.e.E*f/2+A.dx*fa-A.canvas.width*fa/2, cym=by-A.arriba*fa;
+      cx.drawImage(A.canvas,cxm,cym,A.canvas.width*fa,A.canvas.height*fa); }
+  }
+  cx.restore();
+  return {ancho:x*kf, tam:T*kf};
 }
 
 $("#btnSubirPdf").onclick=()=>$("#filePdf").click();
@@ -2758,7 +3099,8 @@ async function pintarCalcado(){
     const cx=o.vis.getContext("2d");
     cx.clearRect(0,0,o.vis.width,o.vis.height);
     cx.drawImage(o.limpio||o.base,0,0);
-    lista.forEach(r=>{ try{ pintarCambio(cx,o.vp,o.page,o.P,r,ESC_PREV,!!o.limpio,o.base); }catch(_){} });
+    const corrs=[];
+    [...lista].sort((a,b)=>a.ini-b.ini).forEach(r=>{ try{ pintarCambio(cx,o.vp,o.page,o.P,r,ESC_PREV,!!o.limpio,o.base,corrs); }catch(_){} });
   }
 }
 function pedirPrevia(){
