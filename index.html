@@ -247,7 +247,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
     <div class="suelta" id="suelta">
       <div class="big">Arrastra aquí tu PDF</div>
       <button class="btn pri" id="btnInicioPdf">Subir PDF</button>
-      <div class="hint">Tiene que ser un PDF con texto de verdad, no una foto ni un escaneo.</div>
+      <div class="hint">Sirve cualquier PDF, también escaneos y fotos: la app los lee sola.</div>
     </div>
 
     <div class="pasos">
@@ -1308,34 +1308,46 @@ function textoSeguro(t,cjto){
   }
   return o;
 }
-async function armarPdfConTexto(hojas,marca){
-  const L=await cargarPdfLib();
-  const doc=await L.PDFDocument.create();
+/* las letras estándar se incrustan una vez por documento, a medida que hacen falta */
+function embebedor(L,doc){
   const fuentes={};
-  const fuente=async k=>{
+  return async k=>{
     if(!fuentes[k]){
       const f=await doc.embedFont(L.StandardFonts[k]||L.StandardFonts.Helvetica);
       fuentes[k]={f, cjto:new Set(f.getCharacterSet())};
     }
     return fuentes[k];
   };
+}
+/* Escribe las piezas invisibles en una página. Sirve igual para una hoja nueva (el
+   PDF exportado) que para una página de un PDF ya existente (el lector de fotos):
+   pdf-lib aísla lo que la página ya tenía, así que nada de lo visible cambia. */
+async function escribirCapa(L,pg,capa,fuente){
+  const ops=[], claves={};
+  for(const r of (capa||[])){
+    const F=await fuente(r.f), t=textoSeguro(r.t,F.cjto);
+    if(!t) continue;
+    const tam=Math.max(0.5,+r.tam||10);
+    let nat=0; try{ nat=F.f.widthOfTextAtSize(t,tam); }catch(_){ continue; }
+    /* se estira o encoge a lo ancho para que ocupe lo mismo que el texto de la imagen */
+    const tz=(nat>0&&r.ancho>0)? Math.max(1,Math.min(1000,100*r.ancho/nat)) : 100;
+    if(!claves[r.f]) claves[r.f]=pg.node.newFontDictionary(F.f.name,F.f.ref);
+    ops.push(L.setFontAndSize(claves[r.f],tam), L.setCharacterSqueeze(tz),
+             L.setTextMatrix(...r.m), L.showText(F.f.encodeText(t)));
+  }
+  if(ops.length) pg.pushOperators(L.pushGraphicsState(), L.beginText(),
+    L.setTextRenderingMode(L.TextRenderingMode.Invisible), ...ops, L.endText(), L.popGraphicsState());
+}
+async function armarPdfConTexto(hojas,marca){
+  const L=await cargarPdfLib();
+  const doc=await L.PDFDocument.create();
+  const fuente=embebedor(L,doc);
   for(const h of hojas){
     const pg=doc.addPage([h.w,h.h]);
-    pg.drawImage(await doc.embedPng(h.url),{x:0,y:0,width:h.w,height:h.h});   /* la misma imagen de siempre */
-    const ops=[], claves={};
-    for(const r of (h.capa||[])){
-      const F=await fuente(r.f), t=textoSeguro(r.t,F.cjto);
-      if(!t) continue;
-      const tam=Math.max(0.5,+r.tam||10);
-      let nat=0; try{ nat=F.f.widthOfTextAtSize(t,tam); }catch(_){ continue; }
-      /* se estira o encoge a lo ancho para que ocupe lo mismo que el texto de la imagen */
-      const tz=(nat>0&&r.ancho>0)? Math.max(1,Math.min(1000,100*r.ancho/nat)) : 100;
-      if(!claves[r.f]) claves[r.f]=pg.node.newFontDictionary(F.f.name,F.f.ref);
-      ops.push(L.setFontAndSize(claves[r.f],tam), L.setCharacterSqueeze(tz),
-               L.setTextMatrix(...r.m), L.showText(F.f.encodeText(t)));
-    }
-    if(ops.length) pg.pushOperators(L.pushGraphicsState(), L.beginText(),
-      L.setTextRenderingMode(L.TextRenderingMode.Invisible), ...ops, L.endText(), L.popGraphicsState());
+    /* la misma imagen de siempre (JPEG solo lo usa el lector de fotos, para escaneos) */
+    const img=/^data:image\/jpe?g/i.test(h.url)? await doc.embedJpg(h.url) : await doc.embedPng(h.url);
+    pg.drawImage(img,{x:0,y:0,width:h.w,height:h.h});
+    await escribirCapa(L,pg,h.capa,fuente);
   }
   doc.setTitle(S.doc.titulo||"Documento");
   doc.setCreator("Papelería"); doc.setProducer("Papelería");
@@ -2018,6 +2030,254 @@ async function leerPdf(file){
   }
   return {bytes, paginas, texto:paginas.map(p=>p.texto).join("\n\n")};
 }
+/* ============ PDF que son foto: se leen con OCR ============
+   Un PDF escaneado —o uno que exportó la versión anterior de esta app— no trae
+   letras: solo la imagen. Aquí se "lee la foto" con Tesseract y a ESE MISMO PDF se
+   le añade la capa de texto invisible, igual a la del PDF exportado. Desde ahí es
+   un PDF normal: se lee, se marca, se guarda, va a la nube y se exporta por el
+   camino de siempre, sin volver a pasar por aquí. Lo que se ve no se toca.
+   El lector (~9 MB) se descarga solo la primera vez que hace falta; el navegador
+   lo guarda para las siguientes. */
+const OCR_VER="7.0.0";
+const OCR_JS="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/"+OCR_VER+"/";
+const OCR_CORE="https://cdn.jsdelivr.net/npm/tesseract.js-core@"+OCR_VER;
+const OCR_IDIOMA="https://cdn.jsdelivr.net/npm/@tesseract.js-data/spa@1.0.0/4.0.0_best_int";
+const ESC_OCR=3;                          /* 216 ppp: nítido para leer, sin gastar memoria de más */
+const OCR_FAM={sans:"Helvetica,Arial,sans-serif", serif:'"Times New Roman",Times,serif', mono:'"Courier New",monospace'};
+let ocrCarga=null, OCR_Q=null;
+function cargarOcr(){
+  if(window.Tesseract) return Promise.resolve(window.Tesseract);
+  if(ocrCarga) return ocrCarga;
+  ocrCarga=new Promise((ok,mal)=>{
+    const s=document.createElement("script");
+    s.src=OCR_JS+"tesseract.min.js";
+    const t=setTimeout(()=>{ ocrCarga=null; mal(new Error("el lector tardó demasiado")); },30000);
+    s.onload=()=>{ clearTimeout(t);
+      if(window.Tesseract) ok(window.Tesseract); else { ocrCarga=null; mal(new Error("lector vacío")); } };
+    s.onerror=()=>{ clearTimeout(t); ocrCarga=null; mal(new Error("el lector no cargó")); };
+    document.head.appendChild(s);
+  });
+  return ocrCarga;
+}
+async function crearLector(T,aviso){
+  const op={workerPath:OCR_JS+"worker.min.js", corePath:OCR_CORE, langPath:OCR_IDIOMA,
+    logger:m=>{ if(aviso && m && /^loading/i.test(m.status||"")) aviso("Preparando el lector…"); }};
+  try{ return await T.createWorker("spa",1,op); }
+  /* sin IndexedDB (ventana privada, artifact) falla la caché: se reintenta sin ella */
+  catch(e){ console.warn("lector",e); return await T.createWorker("spa",1,{...op,cacheMethod:"none"}); }
+}
+/* ---- con qué letra está escrita cada palabra ----
+   La foto no dice la fuente. Se dibuja la MISMA palabra en letra sin remates, con
+   remates y de máquina (y en cursiva), y gana la que más se parece a la tinta real.
+   La negrita se mide por el grosor del trazo, igual que pesoPorTinta. Lo que no se
+   puede decidir en una palabra se hereda de su renglón. */
+function lienzoOcr(w,h){
+  if(!OCR_Q) OCR_Q=document.createElement("canvas").getContext("2d",{willReadFrequently:true});
+  OCR_Q.canvas.width=w; OCR_Q.canvas.height=h;            /* cambiar el tamaño lo deja en blanco */
+  return OCR_Q;
+}
+/* Tinta = más oscuro que la mitad entre el papel y la letra. `pend` endereza el
+   renglón si el escaneo quedó torcido: si no, una palabra larga parece más alta
+   de lo que es y la letra nueva saldría grande. */
+function mascaraTinta(D,an,al,pend){
+  let lo=255,hi=0;
+  for(let k=0;k<D.length;k+=4){ const l=D[k]*.3+D[k+1]*.6+D[k+2]*.1; if(l<lo) lo=l; if(l>hi) hi=l; }
+  if(hi-lo<40) return null;
+  const c=(lo+hi)/2, m=new Uint8Array(an*al), p=pend||0; let x0=an,y0=al,x1=-1,y1=-1;
+  for(let y=0;y<al;y++) for(let x=0;x<an;x++){
+    const k=(y*an+x)*4; if(D[k]*.3+D[k+1]*.6+D[k+2]*.1>=c) continue;
+    const yy=Math.round(y-p*(x-an/2)); if(yy<0||yy>=al) continue;
+    m[yy*an+x]=1;
+  }
+  /* bordes: filas y columnas con tinta de verdad; un punto suelto del escáner no cuenta */
+  const fil=new Uint32Array(al), col=new Uint32Array(an);
+  for(let y=0;y<al;y++) for(let x=0;x<an;x++) if(m[y*an+x]){ fil[y]++; col[x]++; }
+  const tf=Math.max(2,Math.round(an*0.01)), tc=2;
+  for(let y=0;y<al;y++) if(fil[y]>=tf){ if(y<y0)y0=y; if(y>y1)y1=y; }
+  for(let x=0;x<an;x++) if(col[x]>=tc){ if(x<x0)x0=x; if(x>x1)x1=x; }
+  return (x1<0||y1<0)? null : {m,an,al,x0,y0,x1,y1,corte:c};
+}
+function letraCss(e,px){ return `${e.cur?"italic ":""}${e.neg?"bold ":""}${Math.max(4,px)}px ${OCR_FAM[e.fam]}`; }
+function tintaDibujada(txt,e){
+  let q=lienzoOcr(10,10); q.font=letraCss(e,60);
+  const w=Math.ceil(q.measureText(txt).width)+40, h=110;
+  q=lienzoOcr(w,h); q.fillStyle="#fff"; q.fillRect(0,0,w,h);
+  q.font=letraCss(e,60); q.fillStyle="#000"; q.textBaseline="alphabetic"; q.fillText(txt,20,80);
+  return mascaraTinta(q.getImageData(0,0,w,h).data,w,h,0);
+}
+/* las dos manchas se estiran a la misma caja y se miran en la misma rejilla */
+function rejilla(X,GW,GH,f){
+  const w=X.x1-X.x0+1, h=X.y1-X.y0+1;
+  for(let j=0;j<GH;j++){ const y=X.y0+Math.floor((j+.5)*h/GH);
+    for(let i=0;i<GW;i++) f(i,j,X.m[y*X.an+X.x0+Math.floor((i+.5)*w/GW)]); }
+}
+function parecido(R,M){
+  const rw=R.x1-R.x0+1, rh=R.y1-R.y0+1, mw=M.x1-M.x0+1, mh=M.y1-M.y0+1;
+  const GW=Math.max(8,Math.min(120,Math.round(20*rw/rh))), GH=20, a=new Uint8Array(GW*GH);
+  rejilla(R,GW,GH,(i,j,v)=>{ a[j*GW+i]=v; });
+  let y=0,u=0;
+  rejilla(M,GW,GH,(i,j,v)=>{ const r=a[j*GW+i]; if(r&&v) y++; if(r||v) u++; });
+  return (u? y/u : 0) - 0.6*Math.abs(Math.log((rw/rh)/(mw/mh)));     /* forma y proporción */
+}
+/* cuánta tinta hay en la caja de la palabra: la negrita llena más */
+function llenado(X){ let n=0; rejilla(X,60,20,(i,j,v)=>{ n+=v; }); return n/1200; }
+/* inclinación de los trazos: se "endereza" la palabra probando ángulos y gana el que
+   deja los trazos más verticales. La cursiva real ronda 0,2 (12°); la recta, 0. */
+function inclinacion(R){
+  let mejor=-1, sMej=0; const h=R.y1-R.y0+1, off=Math.ceil(h*0.5)+2;
+  for(let k=-2;k<=8;k++){
+    const s=k*0.05, col=new Float32Array(R.an+2*off);
+    for(let y=R.y0;y<=R.y1;y++){ const dx=s*(R.y1-y);
+      for(let x=R.x0;x<=R.x1;x++) if(R.m[y*R.an+x]){ const c=Math.round(x-dx)+off; if(c>=0&&c<col.length) col[c]++; } }
+    let e=0; for(let i=0;i<col.length;i++) e+=col[i]*col[i];
+    if(e>mejor){ mejor=e; sMej=s; }
+  }
+  return sMej;
+}
+function estiloPalabra(cx,w,pend){
+  const t=String(w.text||"").trim(), b=w.bbox;
+  const x0=Math.max(0,b.x0-1), y0=Math.max(0,b.y0-2), an=b.x1-b.x0+3, al=b.y1-b.y0+5;
+  if(an<6||al<6) return null;
+  let D; try{ D=cx.getImageData(x0,y0,an,al).data; }catch(_){ return null; }
+  const R=mascaraTinta(D,an,al,pend); if(!R) return null;
+  const s=t.length>=3? inclinacion(R) : null;
+  const cur= s===null? null : s>=0.15? true : s<=0.05? false : null;
+  const sc={}, Ms={};
+  for(const fam of ["sans","serif","mono"]) for(const neg of [false,true]){
+    const M=tintaDibujada(t,{fam,cur:!!cur,neg}); if(!M) continue;
+    Ms[fam+(neg?"_b":"")]=M; sc[fam+(neg?"_b":"")]=parecido(R,M);
+  }
+  return {R,sc,Ms,cur,dens:llenado(R)};
+}
+function mayoria(l,def){ const s=l.filter(x=>x!==null&&x!==undefined); if(!s.length) return def;
+  return s.filter(Boolean).length*2>s.length; }
+function palabrasOcr(cx,blocks){
+  const out=[], F=["sans","serif","mono"];
+  (blocks||[]).forEach(bk=>(bk.paragraphs||[]).forEach(pa=>(pa.lines||[]).forEach(l=>{
+    /* fuera las "palabras" fantasma: una raya más alta que ancha (manchas del papel) o
+       un signo suelto que el lector no ve claro. Corren la posición de lo que sigue. */
+    const ws=(l.words||[]).filter(w=>{
+      const t=String((w&&w.text)||"").trim(); if(!t||!w.bbox||w.confidence<25) return false;
+      if(/^[—–\-_~|]+$/.test(t) && (w.bbox.y1-w.bbox.y0)>(w.bbox.x1-w.bbox.x0)) return false;
+      if(!/[\p{L}\p{N}]/u.test(t) && w.confidence<50) return false;
+      return true;
+    });
+    if(!ws.length) return;
+    const bl=l.baseline||{}, pend=bl.x1>bl.x0? (bl.y1-bl.y0)/(bl.x1-bl.x0) : 0;
+    const baseEn=x=> bl.x1>bl.x0? bl.y0+(bl.y1-bl.y0)*(x-bl.x0)/(bl.x1-bl.x0) : (l.bbox? l.bbox.y1 : 0);
+    /* se analizan hasta 16 palabras por renglón (las más largas); las demás heredan */
+    const orden=ws.map((w,i)=>i).filter(i=>String(ws[i].text).trim().length>=2)
+      .sort((a,b)=>String(ws[b].text).length-String(ws[a].text).length).slice(0,16);
+    const est=ws.map(()=>null); orden.forEach(i=>{ try{ est[i]=estiloPalabra(cx,ws[i],pend); }catch(_){ est[i]=null; } });
+    const famDe=p=>{ const v=F.map(f=>[f,Math.max(p.sc[f]??-9,p.sc[f+"_b"]??-9)]).sort((a,b)=>b[1]-a[1]);
+      return {fam:v[0][0], margen:v[0][1]-v[1][1], s:v[0][1]}; };
+    /* familia del renglón: votan todas las palabras analizadas, pesadas por su largo */
+    const votos={sans:0,serif:0,mono:0};
+    est.forEach((p,i)=>{ if(!p) return; const n=String(ws[i].text).length;
+      F.forEach(f=>{ votos[f]+=n*Math.max(p.sc[f]??-9,p.sc[f+"_b"]??-9); }); });
+    let famL=F.slice().sort((a,b)=>votos[b]-votos[a])[0];
+    /* en MAYÚSCULAS la letra de máquina se parece a la de palo: tiene que ganar con claridad */
+    const largo=est.reduce((a,p,i)=>a+(p?String(ws[i].text).length:0),0)||1;
+    if(famL==="mono"){ const otra=votos.sans>=votos.serif?"sans":"serif"; if((votos.mono-votos[otra])/largo<0.05) famL=otra; }
+    /* cada palabra conserva su propia familia si la diferencia es clara (renglones mixtos,
+       como "Señor(a): JUAN PÉREZ"); la de máquina no se asigna palabra por palabra */
+    const fams=est.map((p,i)=>{ if(!p) return null; const d=famDe(p);
+      return (d.fam!==famL && d.fam!=="mono" && famL!=="mono" && d.margen>0.06 && String(ws[i].text).length>=4)? d.fam : famL; });
+    const curL=mayoria(est.map(p=>p&&p.cur),false);
+    const curs=est.map(p=>p? p.cur : null);
+    /* negrita: la tinta real frente a la misma palabra dibujada normal y en negrita */
+    const negs=est.map((p,i)=>{ if(!p) return null; const f=fams[i], Mn=p.Ms[f], Mb=p.Ms[f+"_b"]; if(!Mn||!Mb) return null;
+      const dn=llenado(Mn), db=llenado(Mb); if(db-dn<0.02) return null;
+      const x=(p.dens-dn)/(db-dn); return x>=0.62? true : x<=0.38? false : null; });
+    const negL=mayoria(negs,false);
+    const tams=est.map((p,i)=>{ if(!p) return null; const M=p.Ms[fams[i]+((negs[i]??negL)?"_b":"")]; if(!M) return null;
+      return (p.R.y1-p.R.y0+1)/(M.y1-M.y0+1)*60; });
+    const ok=tams.filter(x=>x>0).sort((a,b)=>a-b);
+    const rh=(l.rowAttributes&&l.rowAttributes.rowHeight)||((l.bbox.y1-l.bbox.y0)||20);
+    const tamL=ok.length? ok[Math.floor(ok.length/2)] : rh*1.1;
+    ws.forEach((w,i)=>{
+      const tm=tams[i], tam=(tm && Math.abs(tm-tamL)/tamL>0.25)? tm : tamL;
+      out.push({t:String(w.text).trim(), x0:w.bbox.x0, x1:w.bbox.x1, b0:baseEn(w.bbox.x0), b1:baseEn(w.bbox.x1),
+                tam, fam:fams[i]||famL, cur:curs[i]??curL, neg:negs[i]??negL});
+    });
+  })));
+  return out;
+}
+/* ---- cada palabra como pieza invisible (mismo formato que capaTexto) ----
+   Cada palabra va derecha y sobre SU línea base, así un escaneo un poco torcido
+   queda bien. (Si además se inclina la pieza, pdf.js deja de poner los espacios
+   entre palabras: probado.)
+   enHoja=false: en las coordenadas del PDF original (la capa va sobre sus páginas)
+   enHoja=true : en las de una hoja-imagen nueva (PDF cifrado o con páginas giradas) */
+function capaDePalabras(h,enHoja){
+  const vp=h.vp, E=vp.scale||1, H=vp.height/E;
+  const punto=enHoja? (x,y)=>[x/E, H-y/E] : (x,y)=>vp.convertToPdfPoint(x,y);
+  return h.palabras.map(p=>{
+    const o=punto(p.x0,p.b0), f=punto(p.x0+1,p.b0);
+    const ux=f[0]-o[0], uy=f[1]-o[1], lu=Math.hypot(ux,uy)||1;
+    return {t:p.t, m:[ux/lu,uy/lu,-uy/lu,ux/lu,o[0],o[1]], tam:p.tam/E, ancho:(p.x1-p.x0)/E, f:fuenteEstandar(p)};
+  });
+}
+async function ocrPaginas(bytes,T,L,aviso){
+  const lib=await cargarPdfJs();
+  const pdf=await lib.getDocument({data:bytes.slice(0)}).promise;
+  let lector=null;
+  try{
+    /* Lo normal: la capa va sobre el MISMO PDF. Si pdf-lib no puede abrirlo (cifrado)
+       o tiene páginas giradas, cada hoja pasa a ser su imagen y la capa va encima. */
+    let giros=false;
+    for(let n=1;n<=pdf.numPages;n++){ if(((await pdf.getPage(n)).rotate||0)%360) giros=true; }
+    let doc=null;
+    if(!giros){ try{ doc=await L.PDFDocument.load(bytes.slice(0)); }catch(e){ console.warn("capa sobre imagen:",e); doc=null; } }
+    lector=await crearLector(T,aviso);
+    const hojas=[]; let total=0;
+    for(let n=1;n<=pdf.numPages;n++){
+      if(aviso) aviso(pdf.numPages>1? `Leyendo hoja ${n} de ${pdf.numPages}…` : "Leyendo la foto…");
+      const page=await pdf.getPage(n), v1=page.getViewport({scale:1});
+      const vp=page.getViewport({scale:Math.min(ESC_OCR, 4200/Math.max(v1.width,v1.height))});
+      const cv=document.createElement("canvas"); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+      const cx=cv.getContext("2d",{willReadFrequently:true});
+      cx.fillStyle="#fff"; cx.fillRect(0,0,cv.width,cv.height);
+      await page.render({canvasContext:cx,viewport:vp}).promise;
+      const {data}=await lector.recognize(cv,{},{blocks:true});
+      const palabras=palabrasOcr(cx,data&&data.blocks);
+      total+=palabras.length;
+      hojas.push({n, vp, palabras, url: doc? null : cv.toDataURL("image/jpeg",0.92)});
+      cv.width=cv.height=0;                               /* suelta la memoria del lienzo */
+    }
+    return {doc, hojas, total};
+  }finally{
+    if(lector){ try{ await lector.terminate(); }catch(_){} }
+    try{ pdf.destroy(); }catch(_){}
+  }
+}
+async function pdfConLetras(o,L){
+  if(o.doc){
+    const fuente=embebedor(L,o.doc), pags=o.doc.getPages();
+    for(const h of o.hojas){ if(pags[h.n-1]) await escribirCapa(L,pags[h.n-1],capaDePalabras(h,false),fuente); }
+    return await o.doc.save();
+  }
+  return await armarPdfConTexto(o.hojas.map(h=>({url:h.url, w:h.vp.width/h.vp.scale, h:h.vp.height/h.vp.scale,
+    capa:capaDePalabras(h,true)})), null);
+}
+/* Devuelve {r} con el PDF ya leído, {error} si no se pudo usar el lector, o {} si
+   el lector no encontró letras (entonces sale el aviso de siempre). */
+async function leerFoto(bytes,aviso){
+  toast("Este PDF es una foto: lo estoy leyendo. La primera vez tarda un poco más");
+  let T,L;
+  try{ [T,L]=await Promise.all([cargarOcr(),cargarPdfLib()]); }
+  catch(e){ console.error(e); return {error:"No pude cargar el lector de fotos. Revisa el internet e intenta de nuevo"}; }
+  try{
+    const o=await ocrPaginas(bytes,T,L,aviso);
+    if(!o.total) return {};
+    if(aviso) aviso("Armando…");
+    const nuevos=await pdfConLetras(o,L);
+    const buf=nuevos.buffer.slice(nuevos.byteOffset,nuevos.byteOffset+nuevos.byteLength);
+    const r=await leerPdf({arrayBuffer:()=>Promise.resolve(buf)});
+    return r.texto.trim()? {r} : {};
+  }catch(e){ console.error(e); return {error:"No pude leer la foto de este PDF"}; }
+}
+
 $("#btnSubirPdf").onclick=()=>$("#filePdf").click();
 /* ---- ¿este PDF salió de aquí? Se reconoce por su marca (ver armarPdfConTexto) ---- */
 async function leerMarcaPdf(f){
@@ -2090,7 +2350,12 @@ async function procesarPdf(f){
     /* si salió de esta app y su proyecto está aquí o en la nube, se abre con los campos listos */
     const marca=await leerMarcaPdf(f);
     if(marca && await abrirDesdeMarca(marca)) return;
-    const r=await leerPdf(f);
+    let r=await leerPdf(f), foto=null;
+    if(!r.texto.trim()){                  /* PDF que es una foto (escaneo, o exportado antes): se lee con OCR */
+      foto=await leerFoto(r.bytes, t=>{ btn.textContent=t; if(b2) b2.textContent=t; });
+      if(foto.r) r=foto.r;
+      else if(foto.error){ toast(foto.error); return; }
+    }
     if(!r.texto.trim()){
       /* la salida calcada de esta app es raster: no tiene capa de texto. Quien
          sube su propio PDF exportado necesita abrir su proyecto, no pegar texto. */
@@ -2105,6 +2370,7 @@ async function procesarPdf(f){
     const x=usarTexto(1);
     toast(x? `PDF cargado: ${r.paginas.length} página${r.paginas.length>1?"s":""}${x.s?`, ${x.s} valores detectados`:""}` : "PDF cargado");
     if(marca) toast("Este PDF lo hizo la app, pero su proyecto no está aquí: márcale otra vez los datos que cambian");
+    if(foto&&foto.r) toast("Leí la foto. Revisa los datos: el lector puede confundir alguna letra");
     if(DOC){                                     /* entra al modo calcado y dibuja la vista previa real */
       if(MODO==="inicio") AVANZADO=false;
       MODO="pdf"; $("#salidaIgual").checked=true;
