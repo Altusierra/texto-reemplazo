@@ -801,13 +801,208 @@ function colorEn(cx,x,y){
   try{ const d=cx.getImageData(Math.max(0,Math.round(x)),Math.max(0,Math.round(y)),1,1).data; return [d[0],d[1],d[2]]; }
   catch(_){ return [255,255,255]; }
 }
+/* Color del fondo: la mediana de 24 puntos alrededor del recuadro. Antes se tomaban
+   4 puntos y ganaba el que más se repetía; en una foto o un escaneo los 4 son
+   distintos, así que decidía uno solo, a veces un grano o una letra vecina. */
 function fondoDe(cx,r){
-  const pts=[[r.x-4,r.y+r.h/2],[r.x+r.w+4,r.y+r.h/2],[r.x+r.w/2,r.y-3],[r.x+r.w/2,r.y+r.h+3]];
-  const cuenta={};
-  pts.forEach(([x,y])=>{ const k=colorEn(cx,x,y).join(","); cuenta[k]=(cuenta[k]||0)+1; });
-  let mejor="255,255,255", max=0;
-  for(const k in cuenta) if(cuenta[k]>max){ max=cuenta[k]; mejor=k; }
-  return "rgb("+mejor+")";
+  const pts=[];
+  for(let i=0;i<8;i++){ const x=r.x+r.w*(i+.5)/8; pts.push([x,r.y-3],[x,r.y+r.h+3]); }
+  for(let i=0;i<4;i++){ const y=r.y+r.h*(i+.5)/4; pts.push([r.x-4,y],[r.x+r.w+4,y]); }
+  const c=[[],[],[]];
+  pts.forEach(([x,y])=>{ const k=colorEn(cx,x,y); c[0].push(k[0]); c[1].push(k[1]); c[2].push(k[2]); });
+  const med=a=>{ a.sort((p,q)=>p-q); return a[a.length>>1]; };
+  return "rgb("+med(c[0])+","+med(c[1])+","+med(c[2])+")";
+}
+/* Rellena el recuadro RECONSTRUYENDO el fondo, en vez de pintarlo de un solo color.
+   Lo principal: dentro del recuadro casi todo ES el fondo real; las letras viejas
+   tapan solo una parte. Se borran SOLO sus trazos (con el halo que deja el JPEG) y
+   se rehacen desde el fondo que los rodea:
+   · el color de base sigue fila por fila y columna por columna lo que hay alrededor
+     (degradados, franjas, cambios de color), en la dirección que mejor lo explica;
+   · el dibujo (rayas, tramas, grano) se continúa a través del trazo, en la misma
+     dirección en que corre el dibujo.
+   Si las letras no se distinguen del fondo, se rehace el recuadro entero.
+   Es determinista (vista previa y PDF iguales). Devuelve false si no pudo, y
+   entonces se usa el color plano de antes. */
+function rellenarFondo(cx,r,tinta){
+  const CW=cx.canvas.width, CH=cx.canvas.height;
+  const X0=Math.max(0,Math.floor(r.x)), Y0=Math.max(0,Math.floor(r.y));
+  const X1=Math.min(CW,Math.ceil(r.x+r.w)), Y1=Math.min(CH,Math.ceil(r.y+r.h));
+  const W=X1-X0, H=Y1-Y0; if(W<1||H<1) return false;
+  const B=Math.max(4,Math.min(14,Math.round(H*0.4)));
+  const ax=Math.max(0,X0-B), ay=Math.max(0,Y0-B), bx=Math.min(CW,X1+B), by=Math.min(CH,Y1+B);
+  const AW=bx-ax, AH=by-ay, N=W*H;
+  let img; try{ img=cx.getImageData(ax,ay,AW,AH); }catch(_){ return false; }
+  const D=img.data, K=(x,y)=>((y-ay)*AW+(x-ax))*4, A=(x,y)=>(y-ay)*AW+(x-ax), I=(x,y)=>(y-Y0)*W+(x-X0);
+  const dentro=(x,y)=>x>=X0&&x<X1&&y>=Y0&&y<Y1;
+  const med=a=>{ a.sort((p,q)=>p-q); return a[a.length>>1]; };
+  /* 1) fondo típico alrededor y color REAL de la letra vieja (lo más distinto del
+        fondo dentro del recuadro: sirve igual para letra oscura que clara) */
+  const cs=[[],[],[]];
+  for(let y=ay;y<by;y++) for(let x=ax;x<bx;x++){ if(dentro(x,y)) continue; const k=K(x,y); cs[0].push(D[k]); cs[1].push(D[k+1]); cs[2].push(D[k+2]); }
+  if(!cs[0].length) return false;
+  const bg=[med(cs[0]),med(cs[1]),med(cs[2])];
+  const lejos=[];
+  for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++){ const k=K(x,y); lejos.push([(D[k]-bg[0])**2+(D[k+1]-bg[1])**2+(D[k+2]-bg[2])**2,k]); }
+  lejos.sort((p,q)=>q[0]-p[0]);
+  const nt=Math.max(3,Math.round(N*0.06)), T=[0,0,0];
+  for(let i=0;i<nt&&i<lejos.length;i++){ const k=lejos[i][1]; T[0]+=D[k]; T[1]+=D[k+1]; T[2]+=D[k+2]; }
+  T[0]/=Math.min(nt,lejos.length); T[1]/=Math.min(nt,lejos.length); T[2]/=Math.min(nt,lejos.length);
+  const dv=[T[0]-bg[0],T[1]-bg[1],T[2]-bg[2]], d2=dv[0]*dv[0]+dv[1]*dv[1]+dv[2]*dv[2];
+  const hacia=(k,b)=>{ const e0=T[0]-b[0], e1=T[1]-b[1], e2=T[2]-b[2], ee=e0*e0+e1*e1+e2*e2;   /* 0 = fondo, 1 = letra */
+    return ee<400? 0 : ((D[k]-b[0])*e0+(D[k+1]-b[1])*e1+(D[k+2]-b[2])*e2)/ee; };
+  /* 2) tinta en la franja de alrededor (letras vecinas): no sirve como fondo */
+  const t0=new Uint8Array(AW*AH), es=new Uint8Array(AW*AH);
+  if(d2>=400) for(let y=ay;y<by;y++) for(let x=ax;x<bx;x++) if(!dentro(x,y)&&hacia(K(x,y),bg)>0.3) t0[A(x,y)]=1;
+  for(let y=0;y<AH;y++) for(let x=0;x<AW;x++){ let v=0;                /* +3 px: su halo tampoco */
+    for(let j=-3;j<=3&&!v;j++) for(let i=-3;i<=3&&!v;i++){ const yy=y+j, xx=x+i; if(yy>=0&&yy<AH&&xx>=0&&xx<AW&&t0[yy*AW+xx]) v=1; }
+    es[y*AW+x]=v; }
+  const limpio=(x,y)=>!dentro(x,y)&&!es[A(x,y)];
+  /* 3) color de base: perfiles por fila (izq/der) y por columna (arriba/abajo) */
+  const prom=(x0,x1,y0,y1)=>{ let s0=0,s1=0,s2=0,n=0;
+    for(let y=y0;y<y1;y++) for(let x=x0;x<x1;x++) if(limpio(x,y)){ const k=K(x,y); s0+=D[k]; s1+=D[k+1]; s2+=D[k+2]; n++; }
+    return n? [s0/n,s1/n,s2/n] : null; };
+  const rellena=a=>{ let u=-1; for(let i=0;i<a.length;i++) if(a[i]){ if(u<0) for(let j=0;j<i;j++) a[j]=a[i]; u=i; }
+    else if(u>=0) a[i]=a[u]; return u>=0; };
+  const Li=[],Ri=[],Ar=[],Ab=[];
+  for(let y=ay;y<by;y++){ Li.push(X0>ax? prom(ax,X0,y,y+1):null); Ri.push(bx>X1? prom(X1,bx,y,y+1):null); }
+  for(let x=ax;x<bx;x++){ Ar.push(Y0>ay? prom(x,x+1,ay,Y0):null); Ab.push(by>Y1? prom(x,x+1,Y1,by):null); }
+  const hayL=rellena(Li), hayR=rellena(Ri), hayA=rellena(Ar), hayB=rellena(Ab);
+  const mezcla=(p,q,t)=>p&&q? [p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t,p[2]+(q[2]-p[2])*t] : (p||q);
+  const hor=(x,y)=>mezcla(hayL?Li[y-ay]:null, hayR?Ri[y-ay]:null, Math.max(0,Math.min(1,(x-X0+.5)/W)));
+  const ver=(x,y)=>mezcla(hayA?Ar[x-ax]:null, hayB?Ab[x-ax]:null, Math.max(0,Math.min(1,(y-Y0+.5)/H)));
+  const error=(f,zona)=>{ let e=0,n=0; zona((x,y)=>{ if(!limpio(x,y)) return; const p=f(x,y); if(!p) return; const k=K(x,y);
+    e+=(D[k]-p[0])**2+(D[k+1]-p[1])**2+(D[k+2]-p[2])**2; n++; }); return n? e/n : Infinity; };
+  const eH=(hayL||hayR)? error(hor,g=>{ for(let y=ay;y<by;y++){ if(y>=Y0&&y<Y1) continue; for(let x=X0;x<X1;x++) g(x,y); } }) : Infinity;
+  const eV=(hayA||hayB)? error(ver,g=>{ for(let y=Y0;y<Y1;y++){ for(let x=ax;x<X0;x++) g(x,y); for(let x=X1;x<bx;x++) g(x,y); } }) : Infinity;
+  if(eH===Infinity&&eV===Infinity) return false;
+  const wh=eH===Infinity?0:1/(eH+4), wv=eV===Infinity?0:1/(eV+4), pH=wh/(wh+wv);
+  const base=(x,y)=>{ const h=hor(x,y), v=ver(x,y);
+    return h&&v? [h[0]*pH+v[0]*(1-pH),h[1]*pH+v[1]*(1-pH),h[2]*pH+v[2]*(1-pH)] : (h||v); };
+  let s=(X0*73856093^Y0*19349663^W*83492791)>>>0;
+  const azar=()=>{ s=(s+0x6D2B79F5)>>>0; let t=s; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return ((t^t>>>14)>>>0)/4294967296; };
+  /* 4) ¿qué es letra dentro del recuadro? se separan dos grupos (letra / fondo) con
+        el umbral que mejor los divide, y el borde suave solo cuenta pegado a la letra */
+  const tt=new Float32Array(N);
+  for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++) tt[I(x,y)]=d2>=400? hacia(K(x,y),base(x,y)) : 0;
+  let hueco=null, n=0;
+  if(d2>=400){
+    const hist=new Float64Array(64); for(let i=0;i<N;i++){ const b=Math.max(0,Math.min(63,Math.floor((tt[i]+0.5)*32))); hist[b]++; }
+    let sT=0; for(let b=0;b<64;b++) sT+=b*hist[b];
+    let wB=0,sB=0,mejor=-1,um=32,vt=0; const mu=sT/N;
+    for(let b=0;b<64;b++) vt+=hist[b]*(b-mu)**2;
+    for(let b=0;b<63;b++){ wB+=hist[b]; if(!wB||wB===N) continue; sB+=b*hist[b];
+      const m1=sB/wB, m2=(sT-sB)/(N-wB), v=wB*(N-wB)*(m1-m2)**2/N; if(v>mejor){ mejor=v; um=b; } }
+    const sep=vt>0? mejor/vt : 0;                                       /* qué tan limpia es la separación (0 a 1) */
+    const fuerte=Math.max(0.3,Math.min(0.8,(um+1)/32-0.5)), debil=Math.max(0.15,fuerte*0.5);
+    if(sep>=0.45){
+      const f=new Uint8Array(N); for(let i=0;i<N;i++) if(tt[i]>fuerte) f[i]=1;
+      const m=new Uint8Array(N);
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){ const i=y*W+x; if(f[i]){ m[i]=1; continue; } if(tt[i]<=debil) continue;
+        let cerca=0; for(let j=-2;j<=2&&!cerca;j++) for(let q=-2;q<=2&&!cerca;q++){ const yy=y+j, xx=x+q; if(yy>=0&&yy<H&&xx>=0&&xx<W&&f[yy*W+xx]) cerca=1; }
+        if(cerca) m[i]=1; }
+      /* el halo del JPEG alrededor de la letra también se rehace (llega 3-4 px) */
+      const Rr=H>=45?4:3; hueco=new Uint8Array(N);
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++){ let v=0;
+        for(let j=-Rr;j<=Rr&&!v;j++) for(let q=-Rr;q<=Rr&&!v;q++){ const yy=y+j, xx=x+q; if(yy>=0&&yy<H&&xx>=0&&xx<W&&m[yy*W+xx]) v=1; }
+        hueco[y*W+x]=v; n+=v; }
+    }
+  }
+  if(hueco && n>0 && n<N*0.85){
+    /* 5) el dibujo del fondo = lo que se aparta del color de base. Se continúa a
+          través de los trazos, capa por capa desde el borde, dando más peso a los
+          vecinos que están en la dirección en que corre el dibujo (rayas, tramas) */
+    const RS=new Float32Array(AW*AH*3), ok=new Uint8Array(AW*AH);
+    for(let y=ay;y<by;y++) for(let x=ax;x<bx;x++){ const a=A(x,y), k=K(x,y), b=base(x,y);
+      RS[a*3]=D[k]-b[0]; RS[a*3+1]=D[k+1]-b[1]; RS[a*3+2]=D[k+2]-b[2];
+      ok[a]= dentro(x,y)? !hueco[I(x,y)] : !es[a]; }
+    let jxx=0,jxy=0,jyy=0;                                              /* dirección del dibujo */
+    for(let y=ay+1;y<by-1;y++) for(let x=ax+1;x<bx-1;x++){ const a=A(x,y);
+      if(!ok[a]||!ok[a-1]||!ok[a+1]||!ok[a-AW]||!ok[a+AW]) continue;
+      const l=i=>RS[i*3]*.3+RS[i*3+1]*.6+RS[i*3+2]*.1, gx=(l(a+1)-l(a-1))/2, gy=(l(a+AW)-l(a-AW))/2;
+      jxx+=gx*gx; jxy+=gx*gy; jyy+=gy*gy; }
+    const tr=jxx+jyy, raiz=Math.sqrt((jxx-jyy)**2+4*jxy*jxy), coh=tr>1e-6? raiz/tr : 0;
+    const ang=0.5*Math.atan2(2*jxy,jxx-jyy)+Math.PI/2, ux=Math.cos(ang), uy=Math.sin(ang);   /* a lo largo de la raya */
+    const aniso=coh>0.35, RR=aniso?4:2;
+    /* ¿el fondo tiene dibujo? si es liso (un degradado, un color), basta el color de
+       base: copiar vecinos solo traería restos del halo de las letras */
+    let ev=0,nv=0; for(let y=ay;y<by;y++) for(let x=ax;x<bx;x++){ if(!limpio(x,y)) continue; const a=A(x,y);
+      ev+=(RS[a*3]**2+RS[a*3+1]**2+RS[a*3+2]**2)/3; nv++; }
+    const conDibujo=nv>20 && Math.sqrt(ev/nv)>4;
+    if(!conDibujo) for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++) if(hueco[I(x,y)]){ const a=A(x,y); RS[a*3]=RS[a*3+1]=RS[a*3+2]=0; ok[a]=1; }
+    let faltan=[]; if(conDibujo) for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++) if(hueco[I(x,y)]) faltan.push(A(x,y));
+    /* Dibujo con dirección (rayas, tramas de seguridad): a lo largo de la raya el color
+       no cambia, así que cada punto del trazo COPIA el fondo real que encuentra
+       siguiendo la raya hacia los dos lados. Promediar lo dejaría deslavado. */
+    if(aniso && faltan.length){
+      const orig=ok.slice(), Lm=Math.max(W,H)+2*B, resto=[];
+      const busca=(x,y,sx,sy)=>{ for(let k=1;k<=Lm;k++){ const xx=Math.round(x+sx*k), yy=Math.round(y+sy*k);
+        if(xx<ax||xx>=bx||yy<ay||yy>=by) return null; const a=A(xx,yy); if(orig[a]) return [a,k]; } return null; };
+      const hechos=[];
+      for(const a of faltan){ const y=ay+((a/AW)|0), x=ax+a%AW, p=busca(x,y,ux,uy), q=busca(x,y,-ux,-uy);
+        if(!p&&!q){ resto.push(a); continue; }
+        const w1=p?1/p[1]:0, w2=q?1/q[1]:0, v=[0,1,2].map(c=>((p?RS[p[0]*3+c]*w1:0)+(q?RS[q[0]*3+c]*w2:0))/(w1+w2));
+        hechos.push([a,v]); }
+      hechos.forEach(([a,v])=>{ RS[a*3]=v[0]; RS[a*3+1]=v[1]; RS[a*3+2]=v[2]; ok[a]=1; });
+      faltan=resto;
+    }
+    while(faltan.length){
+      const capa=[], resto=[];
+      for(const a of faltan){ const y=ay+((a/AW)|0), x=ax+a%AW; let s0=0,s1=0,s2=0,sw=0;
+        for(let j=-RR;j<=RR;j++) for(let q=-RR;q<=RR;q++){ if(!j&&!q) continue; const yy=y+j, xx=x+q;
+          if(yy<ay||yy>=by||xx<ax||xx>=bx) continue; const b2=A(xx,yy); if(!ok[b2]) continue;
+          const d=q*q+j*j; let w=1/d;
+          if(aniso){ const perp=q*uy-j*ux; w*=Math.exp(-perp*perp/1.2); }
+          s0+=RS[b2*3]*w; s1+=RS[b2*3+1]*w; s2+=RS[b2*3+2]*w; sw+=w; }
+        if(sw>1e-6) capa.push([a,s0/sw,s1/sw,s2/sw]); else resto.push(a); }
+      if(!capa.length){ resto.forEach(a=>{ RS[a*3]=RS[a*3+1]=RS[a*3+2]=0; }); break; }
+      capa.forEach(([a,r0,r1,r2])=>{ RS[a*3]=r0; RS[a*3+1]=r1; RS[a*3+2]=r2; ok[a]=1; });
+      faltan=resto;
+    }
+    /* 6) grano fino (papel, foto): lo que el promedio suaviza se devuelve, sacado del
+          grano real de alrededor; en fondos limpios no se agrega nada */
+    const fino=[]; for(let y=ay+1;y<by-1;y++) for(let x=ax+1;x<bx-1;x++){ if(!limpio(x,y)) continue; const a=A(x,y);
+      if(es[a-1]||es[a+1]||es[a-AW]||es[a+AW]||dentro(x-1,y)||dentro(x+1,y)||dentro(x,y-1)||dentro(x,y+1)) continue;
+      const g=[0,1,2].map(c=>RS[a*3+c]-(RS[(a-1)*3+c]+RS[(a+1)*3+c]+RS[(a-AW)*3+c]+RS[(a+AW)*3+c])/4); fino.push(g); }
+    let fv=0; fino.forEach(g=>{ fv+=(g[0]*g[0]+g[1]*g[1]+g[2]*g[2])/3; });
+    const conGrano=fino.length>20 && Math.sqrt(fv/fino.length)>2.5;
+    for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++){ if(!hueco[I(x,y)]) continue; const a=A(x,y), k=K(x,y), b=base(x,y);
+      const g=conGrano? fino[Math.floor(azar()*fino.length)] : [0,0,0];
+      for(let c=0;c<3;c++) D[k+c]=Math.max(0,Math.min(255,Math.round(b[c]+RS[a*3+c]+g[c]*0.8)));
+      D[k+3]=255; }
+    cx.putImageData(img,ax,ay);
+    return true;
+  }
+  /* respaldo: las letras no se distinguen del fondo; se rehace el recuadro entero
+     con la base y el grano de alrededor */
+  const gf=[],gc=[];
+  for(let y=Y0;y<Y1;y++){ const l=[]; for(let x=ax;x<bx;x++){ if(x>=X0&&x<X1||!limpio(x,y)) continue;
+    const p=x<X0? Li[y-ay]:Ri[y-ay]; if(!p) continue; const k=K(x,y); l.push([D[k]-p[0],D[k+1]-p[1],D[k+2]-p[2]]); } gf.push(l); }
+  for(let x=X0;x<X1;x++){ const l=[]; for(let y=ay;y<by;y++){ if(y>=Y0&&y<Y1||!limpio(x,y)) continue;
+    const p=y<Y0? Ar[x-ax]:Ab[x-ax]; if(!p) continue; const k=K(x,y); l.push([D[k]-p[0],D[k+1]-p[1],D[k+2]-p[2]]); } gc.push(l); }
+  const cero=[0,0,0];
+  for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++){
+    const b=base(x,y), lf=gf[y-Y0], lc=gc[x-X0], usaF=azar()<pH;
+    const l=(usaF? (lf.length?lf:lc) : (lc.length?lc:lf));
+    const g=l.length? l[Math.floor(azar()*l.length)] : cero;
+    const k=K(x,y);
+    for(let c=0;c<3;c++) D[k+c]=Math.max(0,Math.min(255,Math.round(b[c]+g[c])));
+    D[k+3]=255;
+  }
+  cx.putImageData(img,ax,ay);
+  return true;
+}
+/* La letra puede ser clara sobre un fondo oscuro (un encabezado, una foto). tintaDe
+   busca lo más oscuro; si lo más claro se aleja MÁS del fondo, la letra es la clara.
+   Con letra oscura (lo normal) devuelve exactamente lo mismo que tintaDe. */
+function tintaConFondo(cx,r,fondo,oscura){
+  const F=(String(fondo).match(/\d+/g)||["255","255","255"]).map(Number), lf=F[0]*.3+F[1]*.6+F[2]*.1;
+  const O=(String(oscura).match(/\d+/g)||["0","0","0"]).map(Number), lo=O[0]*.3+O[1]*.6+O[2]*.1;
+  let mejor=null, lum=-1;
+  const px=Math.max(1,Math.floor(r.w/14)), py=Math.max(1,Math.floor(r.h/6));
+  for(let x=r.x;x<r.x+r.w;x+=px) for(let y=r.y;y<r.y+r.h;y+=py){
+    const c=colorEn(cx,x,y), l=c[0]*.3+c[1]*.6+c[2]*.1; if(l>lum){ lum=l; mejor=c; } }
+  return (mejor && lum-lf>60 && lum-lf>lf-lo)? "rgb("+mejor.join(",")+")" : oscura;
 }
 function tintaDe(cx,r){
   let mejor=[0,0,0], lum=1e9;
@@ -1139,17 +1334,18 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig){
      nuevo. El color de tinta se muestrea del render original, donde sí está. */
   let tinta;
   if(conPlancha){
-    tinta = cvOrig? tintaDe(cvOrig.getContext("2d"),rect) : "rgb(0,0,0)";
+    if(cvOrig){ const ox=cvOrig.getContext("2d"); tinta=tintaConFondo(ox,rect,fondoDe(ox,rect),tintaDe(ox,rect)); }
+    else tinta="rgb(0,0,0)";
   }else{
     const fondo=fondoDe(cx,rect);
     if(!exacto){                        /* red de seguridad solo si no hubo anclaje exacto */
       const est=bordeTinta(cx,rect,Math.max(3,alto*ESC*0.55),fondo);
       rect.x-=est.izq; rect.w+=est.izq+est.der;
     }
-    tinta=tintaDe(cx,rect);
+    tinta=tintaConFondo(cx,rect,fondo,tintaDe(cx,rect));   /* letra clara sobre fondo oscuro, también */
     const zonas=zonasGiradas(cx,P,vp,rect); /* guardar la marca de agua antes de tapar */
-    cx.fillStyle=fondo;
-    cx.fillRect(rect.x,rect.y,rect.w,rect.h);
+    /* el fondo se reconstruye a partir de lo que rodea al dato; el color plano queda de respaldo */
+    if(!rellenarFondo(cx,rect,tinta)){ cx.fillStyle=fondo; cx.fillRect(rect.x,rect.y,rect.w,rect.h); }
     devolverGirados(cx,zonas,fondo,tinta);  /* y devolverla sin el texto viejo */
   }
   if(!nuevo) return;
