@@ -197,6 +197,46 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
 #calcado canvas{display:block;width:100%;height:auto;background:#fff;box-shadow:0 24px 60px rgba(0,0,0,.55)}
 .calcnota{font-size:11.5px;color:var(--mut);font-family:var(--mono);letter-spacing:.03em;text-align:center;line-height:1.6}
 
+/* ---------- usuarios, roles y compartir (v011) ---------- */
+.hojaU{position:fixed;inset:0;background:rgba(5,7,10,.72);display:none;align-items:flex-start;justify-content:center;z-index:65;padding:24px 14px;overflow-y:auto}
+.hojaU.on{display:flex}
+.hojaU-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(780px,100%);display:flex;flex-direction:column;gap:14px;box-shadow:0 30px 70px rgba(0,0,0,.6)}
+.hojaU-top{display:flex;align-items:center;gap:10px}
+.hojaU-top h3{margin:0;font-size:15px;flex:1;min-width:0;overflow-wrap:anywhere}
+.ucaja{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.utit{font-size:13px;font-weight:700}
+.ufila{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.uhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.uhead .uc{font-weight:600;overflow-wrap:anywhere}
+.ubadge{font-size:10.5px;font-family:var(--mono);padding:2px 7px;border-radius:5px;background:var(--acc-soft);color:var(--acc)}
+.ubadge.gris{background:rgba(255,255,255,.06);color:var(--mut)}
+.ubadge.rojo{background:rgba(224,87,75,.15);color:var(--danger)}
+.ulinea{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px}
+.ulinea select{width:auto;min-width:150px;max-width:100%;padding:6px 8px}
+.uproy{display:flex;flex-direction:column;gap:5px;font-size:12.5px;padding:6px 0;border-top:1px dashed var(--line)}
+.uproy-l{display:flex;align-items:center;gap:8px}
+.uproy .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pchecks{display:flex;flex-direction:column;gap:5px;max-height:190px;overflow:auto}
+.aviso{background:#2b2410;border:1px solid #8d6e00;border-radius:10px;padding:10px 12px;font-size:12px;color:#FFE082;line-height:1.55}
+.pchips{display:flex;flex-wrap:wrap;gap:5px}
+.pchip{font-size:11px;padding:3px 7px;border-radius:6px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--mut)}
+.pchip.on{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35);color:#86efac}
+.pno>summary{cursor:pointer;margin:2px 0 5px}
+.pgrupo{border-left:3px solid var(--mut);background:#12121f;border-radius:8px;padding:9px 10px 4px}
+.pgt{font-size:13px;font-weight:800}
+.pgd{font-size:11px;color:var(--mut);margin:2px 0 8px;line-height:1.4}
+.prow{display:flex;align-items:flex-start;gap:7px;font-size:12px;cursor:pointer;margin-bottom:7px;line-height:1.35;transition:opacity .15s}
+.prow input{margin:1px 0 0;flex:0 0 auto;accent-color:var(--acc)}
+.pflecha{color:#555;flex:0 0 auto}
+.pexp{display:block;font-size:10.5px;color:#7d7d8c;margin-top:1px}
+.ptag{font-size:10.5px}
+.pnota{font-size:11.5px;color:var(--stamp);line-height:1.5}
+.pnota:empty{display:none}
+details.urol>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+details.urol>summary::-webkit-details-marker{display:none}
+.campo input[readonly]{opacity:.55;cursor:not-allowed}
+@media(max-width:560px){ .hojaU{padding:8px 4px} .hojaU-card{padding:12px 10px} .ucaja,.ufila{padding:9px 8px} .pgrupo{padding:8px 6px 3px} }
+
 /* ---------- impresión ---------- */
 @page{size:letter;margin:14mm 0 12mm}
 @media print{
@@ -261,6 +301,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
       <div class="btnrow" id="filaNube" style="align-items:center;margin-bottom:10px">
         <button class="btn sm" id="btnEntrar" hidden>Entrar con Google</button>
         <button class="btn sm" id="btnSalir" hidden>Salir</button>
+        <button class="btn sm" id="btnUsuarios" hidden>👥 Usuarios</button>
         <span class="hint" id="estadoNube">Conectando con la nube…</span>
       </div>
       <div class="proys" id="proys"></div>
@@ -467,6 +508,13 @@ textarea{resize:vertical;min-height:90px;line-height:1.55;font-family:var(--mono
     <button class="btn sm" id="mCancel">Cancelar</button>
     <button class="btn pri sm" id="mOk">Aceptar</button>
   </div>
+</div></div>
+
+<!-- ============ usuarios, roles y compartir (v011) ============
+     Ventana grande: se abre con la clase "on", igual que el modal. -->
+<div class="hojaU noprint" id="hojaU"><div class="hojaU-card">
+  <div class="hojaU-top"><h3 id="hojaUTit"></h3><button class="btn sm" id="hojaUCerrar">Cerrar</button></div>
+  <div id="hojaUCuerpo" style="display:flex;flex-direction:column;gap:14px"></div>
 </div></div>
 
 <div class="toast" id="toast"></div>
@@ -1979,6 +2027,7 @@ let PAGS=null, PAGS_PEND=null, DOC=null, DOC_PEND=null, REEMP=[];
 let PROY_ACT=null, PDF_B64=null, CARGANDO=false, tAuto=null;
 function soltarPdf(){
   DOC=null; REEMP=[]; PROY_ACT=null; PDF_B64=null;
+  try{ PERM=null; }catch(_){}   /* (v011) otro documento: ya no rigen los permisos del proyecto compartido anterior */
   clearTimeout(tAuto); tAuto=null;
   if(typeof limpiarCalcado==="function") limpiarCalcado();
 }
@@ -3276,6 +3325,7 @@ const SECS_PROPIAS=["#secPlantilla","#secEmisor","#secEncabezado","#secCuerpo","
 const PARTES_PEGAR=["#hintPegar","#imp_texto","#rowImportar","#hintMarcadores"];
 
 function aplicarModo(){
+  if(AVANZADO && MODO==="pdf" && !puedo("avanzado")) AVANZADO=false;   /* (v011) sin permiso, vista simple */
   const enPdf  = (MODO==="pdf") && !!DOC;
   const simple = enPdf && !AVANZADO;
 
@@ -3513,7 +3563,8 @@ async function guardarProyecto(){
     const ix=await leerProyectos();
     ix[n]=Object.assign({},ix[n]||{},{k,paginas:DOC.paginas.length,conPdf:!!dato.pdf,fecha:dato.fecha});
     await almSet(KEY_PROY,JSON.stringify(ix));
-    PROY_ACT={nombre:n,k,id:(PROY_ACT&&PROY_ACT.id)||ix[n].idNube||null};
+    PROY_ACT={nombre:n,k,id:(PROY_ACT&&PROY_ACT.id)||ix[n].idNube||null,
+              dueno:(PROY_ACT&&PROY_ACT.dueno)||ix[n].duenoNube||null};   /* (v011) no perder de quién es */
     await renderProyectos();
     toast(dato.pdf? "Proyecto guardado. Los cambios que hagas se guardan solos"
                   : "Proyecto guardado. El PDF pesa mucho: te lo pediré al abrirlo");
@@ -3576,6 +3627,12 @@ async function montarProyecto(d,bytes,ref){
     pintarTodo(); renderSug(); ajustar();
     await prepararCalcado();
     PROY_ACT = ref || (d.nombre? {nombre:d.nombre,k:claveProy(d.nombre)} : null);
+    /* (v011) copia local de un proyecto compartido: rigen los permisos con que se abrió */
+    if(PROY_ACT && !PROY_ACT.id){
+      try{ const m=(await leerProyectos())[PROY_ACT.nombre];
+           if(m&&m.ajeno){ PERM=m.permViejo||{}; PROY_ACT.dueno=m.duenoNube||null; } }catch(_){}
+      if(typeof aplicarModo==="function") aplicarModo();
+    }
     rotuloGuardar();
     toast(PROY_ACT? "Proyecto abierto. Los cambios se guardan solos" : "Proyecto abierto");
   }catch(e){ console.error(e); toast("No pude abrir ese proyecto"); }
@@ -3612,8 +3669,10 @@ async function renderProyectos(){
     el.innerHTML=`<span class="nm">${esc(n)}</span>
       <span class="de">${m.paginas||"?"} pág.${m.conPdf?"":" · sin PDF"}</span>
       <button class="btn sm" data-ab="1">Abrir</button>
+      ${puedo("duplicar")&&(!m.ajeno||soyDuena())?`<button class="btn sm icon" data-du="1" title="Duplicar proyecto">⧉</button>`:""}
       <button class="btn sm icon" data-bo="1" title="Eliminar">✕</button>`;
     el.querySelector("[data-ab]").onclick=()=>abrirProyecto(n);
+    { const bd=el.querySelector("[data-du]"); if(bd) bd.onclick=()=>duplicarLocal(n); }   /* (v011) */
     el.querySelector("[data-bo]").onclick=async()=>{
       const ix2=await leerProyectos(), k=(ix2[n]||{}).k;
       delete ix2[n];
@@ -3715,22 +3774,33 @@ let PERM=null;            /* permisos del proyecto abierto, o null si es tuyo */
 const soyDuena=()=>!!(USUARIO && (USUARIO.email||"").toLowerCase()===DUENA);
 function puedo(cap){
   if(soyDuena()) return true;
+  /* (v011) los de la cuenta (crear, duplicar…) no dependen del proyecto abierto;
+     los del proyecto salen del rol, o del mapa viejo si la persona no tiene rol,
+     y siempre con la jerarquía: un hijo solo vale si su papá también */
+  const p=PERM_INFO[cap]||null;
+  if(p && p.cuenta) return puedoCuenta(cap);
   if(!PERM) return true;                 /* proyecto propio, sin restricciones */
+  if(p) return efectivoDe(fuenteMia(PERM),cap);
   const c=CAPS.find(x=>x.k===cap);
   return PERM[cap]!==undefined ? !!PERM[cap] : !!(c&&c.def);
 }
 
 async function comprobarAcceso(){
   if(!window.FB){ ACCESO=true; pintarPuerta(); return; }   /* sin nube, app local */
-  if(!USUARIO){ ACCESO=null; pintarPuerta(); return; }
+  if(!USUARIO){ ACCESO=null; MI_USR=null; MI_ROL=null; CREAR_VIEJO=false; pintarPuerta(); return; }
   if(soyDuena()){ ACCESO=true; pintarPuerta(); return; }
   try{
+    await cargarMiRol();                                  /* (v011) su ficha y su rol */
+    if(MI_USR && MI_USR.activo===false){ ACCESO=false; pintarPuerta(); return; }
     const l=await window.FB.listar(USUARIO.uid,(USUARIO.email||"").toLowerCase());
     const cfg=await window.FB.leerConfig();
-    const puedeCrear=!!(cfg&&(cfg.crear||[]).includes((USUARIO.email||"").toLowerCase()));
+    CREAR_VIEJO=!!(cfg&&(cfg.crear||[]).includes((USUARIO.email||"").toLowerCase()));
+    const puedeCrear=puedoCuenta("crear");               /* con rol, lo dice el rol; sin rol, la lista vieja */
     ACCESO = l.length>0 || puedeCrear;
   }catch(e){ console.warn("acceso",e); ACCESO=false; }
   pintarPuerta();
+  if(typeof aplicarModo==="function") aplicarModo();     /* (v011) los botones de la cuenta dependen del rol */
+  if(typeof renderProyectos==="function") renderProyectos();
 }
 function pintarPuerta(){
   const p=$("#puerta"); if(!p) return;
@@ -3741,7 +3811,9 @@ function pintarPuerta(){
     t.textContent="Entra con tu cuenta para continuar.";
     be.hidden=false; bs.hidden=true;
   }else{
-    t.textContent=`Tu cuenta (${USUARIO.email}) todavía no tiene ningún proyecto asignado. Pide que te inviten.`;
+    t.textContent=(MI_USR&&MI_USR.activo===false)      /* (v011) */
+      ? `Tu cuenta (${USUARIO.email}) está desactivada. Pídele a la dueña que la vuelva a activar.`
+      : `Tu cuenta (${USUARIO.email}) todavía no tiene ningún proyecto asignado. Pide que te inviten.`;
     be.hidden=true; bs.hidden=false;
   }
 }
@@ -3803,16 +3875,36 @@ function defDeCampos(){
 function aplicarPermisos(){
   const of=(sel,ok)=>{ const e=$(sel); if(e) e.hidden=!ok; };
   of("#btnPdf",      puedo("descargar"));
-  of("#btnHtml",     puedo("descargar"));
-  of("#btnImprimir", puedo("descargar") && !!DOC && MODO==="pdf");
+  of("#btnHtml",     puedo("descargar_html"));          /* (v011) hijo de descargar */
+  of("#btnImprimir", puedo("imprimir") && !!DOC && MODO==="pdf");
   of("#btnExpCampos",puedo("exportar"));
-  of("#btnAddCampo", puedo("campos"));
-  of("#btnHacerCampo",puedo("campos"));
+  of("#btnAddCampo", puedo("agregar_campo"));           /* (v011) hijos de campos */
+  of("#btnHacerCampo",puedo("hacer_campo"));
   of("#btnNube",     puedo("guardar") && !!DOC && hayNube());
-  of("#btnInicioPdf",puedo("crear"));
+  of("#btnInicioPdf",puedo("crear"));                   /* (v011) crear es de la cuenta: puedo() lo manda a puedoCuenta */
   of("#btnSubirPdf", puedo("crear"));
   const av=$("#avisoPerm");
   if(av) av.hidden = !PERM;
+  /* (v011) el resto de botones, uno por uno. "soloEsconde" nunca vuelve a mostrar
+     lo que aplicarModo ya escondió por el modo. */
+  const soloEsconde=(sel,ok)=>{ const e=$(sel); if(e&&!ok) e.hidden=true; };
+  of("#btnUsarCampo",  puedo("usar_aqui"));
+  of("#selCampoExist", puedo("usar_aqui"));
+  of("#btnImpCampos",  puedo("importar_campos"));
+  soloEsconde("#btnAvanzado",   puedo("avanzado"));
+  soloEsconde("#btnGuardarProy",puedo("guardar"));
+  of("#suelta",        puedo("crear"));
+  of("#btnModoLibre",  puedo("desde_cero"));
+  of("#btnAbrirArch",  puedo("abrir_archivo"));
+  of("#btnUsuarios",   soyDuena() && hayNube());
+  document.querySelectorAll("#campos .campo").forEach(el=>{
+    const q=s=>el.querySelector(s);
+    const del=q("[data-del]");        if(del) del.hidden=!puedo("borrar_campo");
+    const et=q("[data-k=etiqueta]");  if(et)  et.readOnly=!puedo("renombrar_campo");
+    const va=q("[data-k=valor]");     if(va)  va.readOnly=!puedo("editar_valores");
+    const so=q(".solobtns");          if(so)  so.hidden=!puedo("solo_aparicion");
+    const ed=q("[data-ed]");          if(ed)  ed.hidden=!puedo("corregir");
+  });
 }
 
 /* ============ nube: subir, listar, abrir (Etapa 2a) ============
@@ -3878,12 +3970,23 @@ async function fijarIdProyecto(nombre,id,paginas){
    El PDF no cambia nunca: se sube una sola vez por proyecto y después solo se
    actualiza el documento de Firestore. Así una edición cuesta una escritura, no
    una subida de varios MB. */
-async function nubeEmpujar(id,nombre,d,bytes,yaTienePdf){
+async function nubeEmpujar(id,nombre,d,bytes,yaTienePdf,duenoReal){
   if(!enLinea()) throw new Error("offline");
-  if(bytes && !yaTienePdf) await window.FB.subirPdf(USUARIO.uid,id,bytes);
-  await window.FB.guardarDoc(id,{
-    ...d, nombre, dueno:USUARIO.uid, correoDueno:USUARIO.email||"", actualizado:Date.now()
-  });
+  /* (v011) proyecto de OTRA persona: su PDF ya está en la carpeta del dueño y el
+     dueño no cambia. Antes se escribía dueno = quien guardaba: al invitado la
+     regla se lo rechazaba siempre y a la dueña le pasaba el proyecto a su nombre. */
+  const dn=duenoDe(id,duenoReal), ajeno=!!(dn && dn!==USUARIO.uid);
+  if(bytes && !yaTienePdf && !ajeno) await window.FB.subirPdf(USUARIO.uid,id,bytes);
+  await window.FB.guardarDoc(id, ajeno
+    ? { ...d, nombre, actualizado:Date.now() }
+    : { ...d, nombre, dueno:USUARIO.uid, correoDueno:USUARIO.email||"", actualizado:Date.now() });
+}
+/* (v011) de quién es un proyecto: lo que se sepa, en este orden */
+function duenoDe(id,duenoReal){
+  if(duenoReal) return duenoReal;
+  if(PROY_ACT && PROY_ACT.id===id && PROY_ACT.dueno) return PROY_ACT.dueno;
+  const n=(NUBE||[]).find(x=>x.id===id);
+  return n? (n.dueno||null) : null;
 }
 async function marcarPdfEnNube(nombre){
   try{
@@ -3896,11 +3999,13 @@ async function marcarPdfEnNube(nombre){
 let tNube=null;
 function programarNube(){
   if(!hayNube()||!PROY_ACT||!PROY_ACT.id) return;   /* solo una vez ya nombrado y subido */
+  if(!puedo("guardar")) return;   /* (v011) sin permiso no se intenta: quedaría pendiente para siempre */
   clearTimeout(tNube);
   tNube=setTimeout(()=>{ empujarActual(true); },8000);
 }
 async function empujarActual(silencioso){
   if(!hayNube()||!DOC||!PROY_ACT||!PROY_ACT.id) return false;
+  if(!puedo("guardar")) return false;                 /* (v011) */
   const ix=await leerProyectos(), e=ix[PROY_ACT.nombre]||{};
   try{
     const d=paqueteProyecto(PROY_ACT.nombre,0); delete d.pdf;
@@ -3914,6 +4019,12 @@ async function empujarActual(silencioso){
     return true;
   }catch(e2){
     console.error("auto nube",e2);
+    if(esDePermiso(e2)){                              /* (v011) no es la red: reintentar no sirve */
+      await desencolar(PROY_ACT.id);
+      if(!silencioso) toast("No tienes permiso para guardar este proyecto en la nube");
+      else rotuloGuardar("Sin permiso para la nube");
+      return false;
+    }
     await encolar(PROY_ACT.id);
     if(!silencioso) toast("Sin conexión. Se subirá cuando vuelva el internet");
     return false;
@@ -3947,7 +4058,7 @@ async function nubeSubir(){
     const ix=await leerProyectos(), ya=!!(ix[n]&&ix[n].pdfEnNube);
     await nubeEmpujar(id,n,d,DOC.bytes,ya);
     paso="guardar los datos";
-    PROY_ACT={nombre:n,k:claveProy(n),id};
+    PROY_ACT={nombre:n,k:claveProy(n),id,dueno:(PROY_ACT&&PROY_ACT.dueno)||null};   /* (v011) */
     await fijarIdProyecto(n,id,DOC.paginas.length);
     /* copia local con el PDF: es lo que permite que la cola resuba este
        proyecto más tarde aunque ya no esté abierto */
@@ -3958,7 +4069,7 @@ async function nubeSubir(){
     return true;
   }catch(e){
     console.error(paso,e);
-    PROY_ACT={nombre:n,k:claveProy(n),id};
+    PROY_ACT={nombre:n,k:claveProy(n),id,dueno:(PROY_ACT&&PROY_ACT.dueno)||null};   /* (v011) */
     await fijarIdProyecto(n,id,DOC.paginas.length);
     const txt=String(e&&e.message||e);
     if(!enLinea()||/^offline$/i.test(txt)){
@@ -4001,10 +4112,11 @@ async function sincronizarNube(){
         d.REEMP=JSON.stringify(Array.isArray(g.REEMP)?g.REEMP:[]);
         const bytes=b64? deB64(b64).buffer : null;
         if(!bytes && !ix[nombre].pdfEnNube){ await desencolar(id); continue; }  /* sin PDF que subir */
-        await nubeEmpujar(id,nombre,d,bytes,!!ix[nombre].pdfEnNube);
+        await nubeEmpujar(id,nombre,d,bytes,!!ix[nombre].pdfEnNube,ix[nombre].duenoNube);
         if(bytes) await marcarPdfEnNube(nombre);
         await desencolar(id); hechos++;
-      }catch(e){ console.warn("pendiente sin subir:",id,e); }
+      }catch(e){ console.warn("pendiente sin subir:",id,e);
+        if(esDePermiso(e)) await desencolar(id); }        /* (v011) sin permiso nunca subirá */
     }
     if(hechos) toast(`${hechos} pendiente${hechos>1?"s":""} sincronizado${hechos>1?"s":""}`);
   }finally{ sincronizando=false; estadoNubeUI(); renderNube(); }
@@ -4016,6 +4128,7 @@ async function nubeAbrir(id,uidDueno){
   if(!hayNube()) return;
   try{
     toast("Bajando de la nube…");
+    if(!soyDuena()) await cargarMiRol();              /* (v011) permisos frescos al abrir */
     const d=await window.FB.leerDoc(id);
     if(!d){ toast("Ese proyecto ya no está"); return; }
     if(typeof d.REEMP==="string"){                    /* vuelve a array: viajó como texto */
@@ -4023,8 +4136,9 @@ async function nubeAbrir(id,uidDueno){
     }
     if(!Array.isArray(d.REEMP)) d.REEMP=[];
     const bytes=await window.FB.bajarPdf(uidDueno||d.dueno,id);
-    await montarProyecto(d,bytes,{nombre:d.nombre,k:claveProy(d.nombre||id),id});
-    PROY_ACT={nombre:d.nombre||id,k:claveProy(d.nombre||id),id};
+    const duenoN=d.dueno||uidDueno||null;             /* (v011) de quién es: nubeEmpujar no lo cambia */
+    await montarProyecto(d,bytes,{nombre:d.nombre,k:claveProy(d.nombre||id),id,dueno:duenoN});
+    PROY_ACT={nombre:d.nombre||id,k:claveProy(d.nombre||id),id,dueno:duenoN};
     /* permisos: null si el proyecto es tuyo, el mapa del correo si te lo comparten */
     PERM = (d.dueno===USUARIO.uid || soyDuena()) ? null
          : ((d.permisos||{})[(USUARIO.email||"").toLowerCase()] || {});
@@ -4036,10 +4150,18 @@ async function nubeAbrir(id,uidDueno){
     }
     aplicarPermisos();
     await fijarIdProyecto(d.nombre||id,id,(d.paginas||0));
+    /* (v011) el índice local recuerda de quién es y con qué permisos se abrió,
+       para que la copia local de un proyecto compartido siga sus permisos */
+    try{
+      const ix=await leerProyectos(), nn=d.nombre||id;
+      if(ix[nn]){ ix[nn].duenoNube=duenoN; ix[nn].ajeno=!!PERM; ix[nn].permViejo=PERM||null;
+                  await almSet(KEY_PROY,JSON.stringify(ix)); }
+    }catch(_){}
     rotuloGuardar();
   }catch(e){
     console.error(e);
-    toast(/cors|Failed to fetch/i.test(String(e))? "Bloqueado por CORS al bajar" : "No pude abrir de la nube: "+(e.code||e.message||""));
+    toast(esDePermiso(e)? "No tienes permiso para abrir ese proyecto"            /* (v011) */
+        : /cors|Failed to fetch/i.test(String(e))? "Bloqueado por CORS al bajar" : "No pude abrir de la nube: "+(e.code||e.message||""));
   }
 }
 
@@ -4148,29 +4270,761 @@ async function renderNube(){
   if(!enLinea()){ box.innerHTML='<div class="hint">Sin conexión: no puedo consultar la nube.</div>'; return; }
   box.innerHTML='<div class="hint">Consultando la nube…</div>';
   try{
+    /* (v011) cada vez que se vuelve al Inicio se releen su ficha y su rol: así los
+       cambios de permisos le llegan sin recargar la página */
+    if(!soyDuena()){
+      await cargarMiRol();
+      if(MI_USR && MI_USR.activo===false && ACCESO===true){ ACCESO=false; pintarPuerta(); }
+    }
     NUBE=await window.FB.listar(USUARIO.uid,USUARIO.email||"");
     NUBE.sort((a,b)=>(b.actualizado||0)-(a.actualizado||0));
     box.innerHTML="";
-    if(!NUBE.length){ box.innerHTML='<div class="hint">Nada en la nube todavía.</div>'; return; }
+    if(!NUBE.length){ box.innerHTML='<div class="hint">Nada en la nube todavía.</div>'; aplicarModo(); return; }
     NUBE.forEach(p=>{
       const mio=p.dueno===USUARIO.uid, inv=(p.invitados||[]).length;
       const el=document.createElement("div"); el.className="proy";
+      /* (v011) ⧉ duplicar; ✏️ también para el invitado con permiso; 👤 y ✕ según el rol */
       el.innerHTML=`<span class="nm">${esc(p.nombre||p.id)}</span>
         <span class="de">${p.paginas||"?"} pág.${mio?(inv?` · ${inv} invitado${inv>1?"s":""}`:""):" · compartido"}</span>
         <button class="btn sm" data-ab="1">Abrir</button>
-        ${mio?`<button class="btn sm icon" data-re="1" title="Renombrar">✏️</button>
-               <button class="btn sm icon" data-co="1" title="Compartir">👤</button>
-               <button class="btn sm icon" data-bo="1" title="Eliminar de la nube">✕</button>`:""}`;
+        ${(mio||soyDuena())&&puedo("duplicar")?`<button class="btn sm icon" data-du="1" title="Duplicar proyecto">⧉</button>`:""}
+        ${mio||puedoEn(p,"renombrar")?`<button class="btn sm icon" data-re="1" title="Renombrar">✏️</button>`:""}
+        ${mio&&puedo("compartir")?`<button class="btn sm icon" data-co="1" title="Compartir">👤</button>`:""}
+        ${mio&&puedo("borrar")?`<button class="btn sm icon" data-bo="1" title="Eliminar de la nube">✕</button>`:""}`;
       el.querySelector("[data-ab]").onclick=()=>nubeAbrir(p.id,p.dueno);
-      if(mio){
-        el.querySelector("[data-re]").onclick=()=>nubeRenombrar(p);
-        el.querySelector("[data-co]").onclick=()=>nubeCompartir(p);
-        el.querySelector("[data-bo]").onclick=()=>nubeBorrar(p);
-      }
+      const en=(s,fn)=>{ const b=el.querySelector(s); if(b) b.onclick=fn; };
+      en("[data-du]",()=>nubeDuplicar(p));
+      en("[data-re]",()=>nubeRenombrar(p));
+      en("[data-co]",()=>panelCompartir(p));      /* (v011) antes: nubeCompartir (sigue en el código) */
+      en("[data-bo]",()=>nubeBorrar(p));
       box.appendChild(el);
     });
+    aplicarModo();                                /* (v011) el rol pudo cambiar: botones al día */
   }catch(e){ console.error(e); box.innerHTML='<div class="hint">No pude leer la nube.</div>'; }
 }
+
+/* ============ usuarios, roles y permisos por jerarquía (v011 · 29-sep-2026) ============
+   Pedido de la dueña: cada botón con su casilla, ordenados como en SellerChat
+   (Usuarios y roles), y con dependencias: si se APAGA el papá se apagan todos sus
+   hijos, y si se PRENDE un hijo se prende su papá. Así nunca queda un botón
+   "prendido que no funciona".
+   - Cada persona tiene UN rol: usuarios/{correo}.rolId → roles/{id}.permisos.
+     Sus proyectos siguen siendo la lista `invitados` de cada proyecto (lo único
+     que Firestore sabe consultar con array-contains).
+   - Personas SIN ficha en `usuarios` (las de antes): mandan los permisos viejos de
+     cada proyecto (el mapa `permisos`) y la lista config/acceso.crear. Nada se rompe.
+   - 🔒 = lo bloquean las reglas de Firestore (REGLAS_FIRESTORE, abajo).
+     👁 = solo esconde el botón: quien abre un proyecto ya tiene el PDF en su navegador.
+   - Permiso NUEVO: se agrega en PERM_MAPA, en su grupo y nivel (o en PERM_EXTRA,
+     que sale en el grupo OTROS y nunca desaparece). Un 🔒 nuevo debe nacer en
+     false: las reglas cuentan como false lo que el rol no trae.
+   Cada fila: [nivel, clave, texto, explicación, real(🔒), def]. nivel 0 = botón o
+   sección; 1 = va dentro del de arriba; 2 = dentro del 1. `def` = lo que ve quien
+   todavía no tiene rol (así era antes de esta versión). */
+const PERM_MAPA=[
+ {t:"🅰️ SUS PROPIOS PROYECTOS · PANTALLA DE INICIO", c:"#4CAF50", cuenta:true,
+  d:"Vale para toda la cuenta de la persona, no para un proyecto.", it:[
+  [0,"crear","➕ Subir PDF y crear proyectos propios","Botón «Subir PDF» y arrastrar un PDF. Sin esto solo trabaja en lo que le compartan.",true,false],
+  [1,"duplicar","⧉ Duplicar sus proyectos","Copia idéntica: el mismo PDF, los mismos campos y valores. La copia nace sin invitados.",false,false],
+  [1,"compartir","👤 Compartir sus proyectos","Invitar o quitar personas de SUS proyectos. Los permisos de cada una los pone la dueña con el rol.",true,true],
+  [1,"borrar","✕ Borrar sus proyectos de la nube","",true,true],
+  [0,"desde_cero","📝 Armar un documento desde cero","Botón «Prefiero armar un documento desde cero».",false,true],
+  [0,"abrir_archivo","📂 Abrir proyecto desde archivo","Botón «Abrir proyecto desde archivo» (.proyecto.json).",false,true]]},
+ {t:"🅱️ PROYECTOS QUE LE COMPARTEN", c:"#FF9800",
+  d:"Lo que puede hacer dentro de un proyecto de otra persona. En sus propios proyectos puede todo.", it:[
+  [0,"abrir","📂 Abrir los proyectos que le comparten","Sin esto no ve ninguno, aunque esté invitado.",true,true],
+  [1,"editar_valores","✍️ Escribir los valores de los campos","Sin esto solo mira: las cajas de valor quedan bloqueadas.",false,true],
+  [1,"guardar","💾 Guardar sus cambios en la nube","Botones «Subir a la nube» y «Guardar cambios», y el guardado automático. Sin esto lo que cambie queda solo en su computador.",true,false],
+  [2,"renombrar","✏️ Renombrar el proyecto","El lápiz de la lista «En la nube».",true,false],
+  [1,"campos","🏷 Crear, borrar o mover campos","La nube bloquea todo este grupo. Sin «Guardar», los cambios quedan solo en su computador.",true,false],
+  [2,"hacer_campo","Botón «Hacer campo»","Volver campo lo que seleccionó en el texto.",false,true],
+  [2,"usar_aqui","Botón «Usar aquí»","Poner un campo que ya existe en otro lugar del texto.",false,true],
+  [2,"agregar_campo","Botón «+ Agregar campo»","",false,true],
+  [2,"borrar_campo","✕ Eliminar un campo","",false,true],
+  [2,"renombrar_campo","Cambiar el nombre de un campo","",false,true],
+  [2,"solo_aparicion","«Modificar solo la aparición seleccionada» / «todas»","",false,true],
+  [2,"corregir","✏︎ corregir cuál es el dato que cambia","",false,true],
+  [2,"importar_campos","📥 Importar campos desde archivo","Reemplaza los campos por los del archivo.",false,true],
+  [1,"descargar","⬇️ Descargar PDF","Botón «Descargar PDF» / «Exportar PDF».",false,true],
+  [2,"imprimir","🖨 Imprimir","Abre la ventana de impresión (también sirve para sacar el PDF).",false,true],
+  [2,"descargar_html","⬇️ Descargar HTML","",false,true],
+  [1,"exportar","📤 Exportar campos a archivo","Descarga los campos con sus valores (.campos.json).",false,false],
+  [1,"avanzado","⚙️ Botón «avanzado»","Muestra Plantilla, Mi plantilla, Emisor, Encabezado, Cuerpo, Tabla y Firma.",false,true]]}
+];
+const PERM_EXTRA=[];      /* [clave, texto, explicación, real, def]: permiso nuevo sin lugar todavía */
+const PERM_INFO={}, PADRE={};
+(function(){
+  PERM_MAPA.forEach(g=>{
+    const pila=[];
+    g.it.forEach(([nv,k,t,d,real,def])=>{
+      pila[nv]=k; pila.length=nv+1;
+      PERM_INFO[k]={k,t,d:d||"",real:!!real,def:!!def,cuenta:!!g.cuenta,nivel:nv};
+      if(nv>0) PADRE[k]=pila[nv-1];
+    });
+  });
+  PERM_EXTRA.forEach(([k,t,d,real,def])=>{
+    if(!PERM_INFO[k]) PERM_INFO[k]={k,t,d:d||"",real:!!real,def:!!def,cuenta:false,nivel:0};
+  });
+})();
+const PERM_CLAVES=Object.keys(PERM_INFO);
+function ancestros(k){ const o=[]; let a=PADRE[k]; while(a){ o.push(a); a=PADRE[a]; } return o; }
+function descendientes(k){ const o=[]; PERM_CLAVES.forEach(x=>{ if(PADRE[x]===k) o.push(x,...descendientes(x)); }); return o; }
+
+/* ---- de dónde salen los permisos de una persona ----
+   f = {usr, rol, crear, viejo}: su ficha, su rol, si está en la lista vieja de
+   crear, y el mapa viejo del proyecto. Con ficha manda el rol (y si está
+   desactivada o su rol no existe, nada: falla cerrado, como las reglas). */
+let MI_USR=null, MI_ROL=null, CREAR_VIEJO=false;
+function crudoDe(f,k){
+  const p=PERM_INFO[k]; if(!p) return false;
+  if(f.usr){
+    if(f.usr.activo===false) return false;
+    const r=f.rol&&f.rol.permisos; if(!r) return false;
+    return r[k]!==undefined ? r[k]===true : (p.real? false : p.def);
+  }
+  if(p.cuenta) return k==="crear" ? !!f.crear : p.def;
+  const m=f.viejo||{};
+  return m[k]!==undefined ? !!m[k] : p.def;
+}
+function efectivoDe(f,k){ return crudoDe(f,k) && ancestros(k).every(a=>crudoDe(f,a)); }
+const fuenteMia=viejo=>({usr:MI_USR, rol:MI_ROL, crear:CREAR_VIEJO, viejo});
+/* los de la cuenta (🅰️) no dependen del proyecto abierto */
+function puedoCuenta(k){
+  if(!window.FB||!USUARIO) return true;          /* sin nube o sin sesión: decide la puerta */
+  if(soyDuena()) return true;
+  return efectivoDe(fuenteMia(null),k);
+}
+/* para una fila de la lista "En la nube", sin abrir el proyecto */
+function puedoEn(p,k){
+  if(soyDuena()) return true;
+  if(!USUARIO) return false;
+  if(p.dueno===USUARIO.uid) return true;
+  return efectivoDe(fuenteMia((p.permisos||{})[(USUARIO.email||"").toLowerCase()]||{}),k);
+}
+/* deja todas las claves y ningún hijo prendido con un papá apagado */
+function normalizarPerms(v){
+  const o={};
+  PERM_CLAVES.forEach(k=>{ o[k]=!!(v&&v[k]); });
+  PERM_CLAVES.forEach(k=>{ if(o[k] && !ancestros(k).every(a=>o[a])) o[k]=false; });
+  return o;
+}
+function valoresDeRol(r){
+  const o={}, m=(r&&r.permisos)||{};
+  PERM_CLAVES.forEach(k=>{ const p=PERM_INFO[k]; o[k]= m[k]!==undefined ? m[k]===true : (p.real? false : p.def); });
+  return o;
+}
+function esDePermiso(e){ return /permission|insufficient/i.test(String((e&&(e.code||e.message))||e||"")); }
+async function cargarMiRol(){
+  if(!window.FB||!USUARIO||!window.FB.leerUsuario){ MI_USR=null; MI_ROL=null; return; }
+  let u=null, r=null;
+  try{
+    u=await window.FB.leerUsuario((USUARIO.email||"").toLowerCase());
+    if(u&&u.rolId) r=await window.FB.leerRol(u.rolId);
+  }catch(_){}
+  MI_USR=u; MI_ROL=r;
+}
+
+/* ---- confirmar con Sí / Cancelar, en el mismo modal de askText ---- */
+function confirmar(msg,si="Sí",no="Cancelar"){
+  return new Promise(res=>{
+    const m=$("#modal"), i=$("#mInput"), bo=$("#mOk"), bc=$("#mCancel");
+    const to=bo.textContent, tc=bc.textContent;
+    $("#mTitulo").textContent=msg; i.hidden=true; bo.textContent=si; bc.textContent=no;
+    m.classList.add("on");
+    const cerrar=v=>{ m.classList.remove("on"); i.hidden=false; bo.textContent=to; bc.textContent=tc;
+      bo.onclick=null; bc.onclick=null; res(v); };
+    bo.onclick=()=>cerrar(true); bc.onclick=()=>cerrar(false);
+  });
+}
+
+/* ---- la ventana grande de Usuarios y de Compartir ----
+   Se abre con la clase "on", como el modal (trampa 12.6: con hidden no se ve). */
+let HOJA_SUCIA=false;
+const SUCIOS=new Set(), ROL_ABIERTO=new Set();
+function abrirHojaU(titulo){
+  $("#hojaUTit").textContent=titulo;
+  const c=$("#hojaUCuerpo"); c.innerHTML="";
+  SUCIOS.clear(); HOJA_SUCIA=false;
+  $("#hojaU").classList.add("on"); $("#hojaU").scrollTop=0;
+  return c;
+}
+async function cerrarHojaU(){
+  if(HOJA_SUCIA && !(await confirmar("Hay permisos sin guardar. ¿Cerrar sin guardarlos?","Cerrar sin guardar"))) return;
+  SUCIOS.clear(); HOJA_SUCIA=false;
+  $("#hojaU").classList.remove("on"); $("#hojaUCuerpo").innerHTML="";
+  renderNube();
+}
+$("#hojaUCerrar").onclick=cerrarHojaU;
+
+/* ---- lo que puede una persona, en chips ✅ (y los ⬜ plegados) ---- */
+function chipsPerms(f,cuenta){
+  const ks=PERM_CLAVES.filter(k=>!!PERM_INFO[k].cuenta===!!cuenta);
+  const si=ks.filter(k=>efectivoDe(f,k)), no=ks.filter(k=>!efectivoDe(f,k));
+  const t=k=>esc(PERM_INFO[k].t);
+  return `<div class="pchips">${si.length? si.map(k=>`<span class="pchip on">✅ ${t(k)}</span>`).join("") : '<span class="pchip">⬜ Nada</span>'}</div>`+
+    (no.length? `<details class="pno"><summary class="hint">No puede (${no.length})</summary><div class="pchips">${no.map(k=>`<span class="pchip">⬜ ${t(k)}</span>`).join("")}</div></details>` : "");
+}
+
+/* ---- las casillas por grupos, con la cascada papá / hijo ----
+   vals se modifica en su sitio; alCambiar avisa que hay algo sin guardar. */
+function pintarCasillas(cont,vals,nota,alCambiar){
+  const cks={};
+  const grupos=PERM_MAPA.slice();
+  const otros=PERM_CLAVES.filter(k=>!PERM_MAPA.some(g=>g.it.some(x=>x[1]===k)));
+  if(otros.length) grupos.push({t:"➕ OTROS PERMISOS",c:"#9E9E9E",d:"Permisos nuevos que todavía no tienen su lugar en la lista.",
+    it:otros.map(k=>[0,k,PERM_INFO[k].t,PERM_INFO[k].d,PERM_INFO[k].real,PERM_INFO[k].def])});
+  grupos.forEach(g=>{
+    const box=document.createElement("div"); box.className="pgrupo"; box.style.borderLeftColor=g.c;
+    box.innerHTML=`<div class="pgt" style="color:${g.c}">${esc(g.t)}</div>${g.d?`<div class="pgd">${esc(g.d)}</div>`:""}`;
+    g.it.forEach(([nv,k,t,d,real])=>{
+      const lb=document.createElement("label"); lb.className="prow"; lb.style.marginLeft=(nv*22)+"px";
+      lb.innerHTML=`${nv>0?'<span class="pflecha">↳</span>':""}<input type="checkbox" data-perm="${esc(k)}">`+
+        `<span><span class="ptx">${esc(t)}</span> <span class="ptag" title="${real?"La nube lo bloquea de verdad":"Solo esconde el botón"}">${real?"🔒":"👁"}</span>`+
+        `${d?`<span class="pexp">${esc(d)}</span>`:""}</span>`;
+      const ck=lb.querySelector("input"); ck.checked=!!vals[k];
+      cks[k]={ck,lb}; box.appendChild(lb);
+    });
+    cont.appendChild(box);
+  });
+  const opacar=()=>Object.keys(cks).forEach(k=>{
+    const ok=ancestros(k).every(a=>!cks[a]||cks[a].ck.checked);
+    cks[k].lb.style.opacity=ok?"1":".5";
+  });
+  Object.keys(cks).forEach(k=>{
+    cks[k].ck.addEventListener("change",()=>{
+      const on=cks[k].ck.checked, tocados=[];
+      if(on) ancestros(k).forEach(a=>{ if(cks[a]&&!cks[a].ck.checked){ cks[a].ck.checked=true; tocados.push(a); } });
+      else descendientes(k).forEach(h=>{ if(cks[h]&&cks[h].ck.checked){ cks[h].ck.checked=false; tocados.push(h); } });
+      Object.keys(cks).forEach(x=>{ vals[x]=cks[x].ck.checked; });
+      opacar();
+      const nom=x=>"«"+PERM_INFO[x].t+"»";
+      if(nota) nota.textContent = tocados.length
+        ? (on? `Al prender ${nom(k)} también se prendió: ${tocados.map(nom).join(", ")}.`
+             : `Al apagar ${nom(k)} también se apagaron: ${tocados.map(nom).join(", ")}.`)
+        : "";
+      if(tocados.length) toast(on? "También se prendió lo de arriba" : `También se apagaron ${tocados.length} de adentro`);
+      if(alCambiar) alCambiar();
+    });
+  });
+  opacar();
+  return cks;
+}
+
+/* ---- las reglas de Firestore que van con esta versión (se pegan UNA vez) ---- */
+const REGLAS_FIRESTORE=`rules_version = '2';
+// Papelería · reglas v2 (29-sep-2026): usuarios y roles.
+// Personas SIN ficha en /usuarios siguen con los permisos viejos de cada proyecto.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function correo() {
+      return request.auth != null && request.auth.token.email != null
+             ? request.auth.token.email.lower() : "";
+    }
+    function esDuena() { return correo() == "altusierra@gmail.com"; }
+
+    // ---- ficha y rol de quien pide ----
+    function rutaUsr() { return /databases/$(database)/documents/usuarios/$(correo()); }
+    function tieneUsr() { return correo() != "" && exists(rutaUsr()); }
+    function usr() { return get(rutaUsr()).data; }
+    function activoOk() { return !tieneUsr() || usr().get('activo', true) == true; }
+    function rolPerm(k) {
+      return get(/databases/$(database)/documents/roles/$(usr().rolId)).data
+               .get('permisos', {}).get(k, false) == true;
+    }
+    function crearViejo() {
+      return exists(/databases/$(database)/documents/config/acceso)
+             && correo() in get(/databases/$(database)/documents/config/acceso).data.get('crear', []);
+    }
+    function puedeCrear() {
+      return esDuena() || (tieneUsr() ? (activoOk() && rolPerm('crear')) : crearViejo());
+    }
+    // hijos de 'crear' (compartir, borrar) en sus propios proyectos; sin ficha, como antes
+    function cuentaPuede(k) {
+      return esDuena() || !tieneUsr() || (activoOk() && rolPerm('crear') && rolPerm(k));
+    }
+
+    match /config/acceso {
+      allow read:  if request.auth != null;
+      allow write: if esDuena();
+    }
+    match /roles/{rolId} {
+      allow read:  if request.auth != null;
+      allow write: if esDuena();
+    }
+    match /usuarios/{mail} {
+      allow read:  if request.auth != null && (esDuena() || mail == correo());
+      allow write: if esDuena();
+    }
+
+    match /proyectos/{proyId} {
+      function esDueno()   { return request.auth != null && resource.data.dueno == request.auth.uid; }
+      function esInvitado(){ return correo() in resource.data.get('invitados', []); }
+      function tienePerms(){ return correo() in resource.data.get('permisos', {}); }
+      function permViejo(k, pordefecto) {
+        return tienePerms() ? resource.data.permisos[correo()].get(k, pordefecto) : pordefecto;
+      }
+      // con ficha manda el rol; sin ficha, los permisos viejos de este proyecto
+      function perm(k, pordefecto) { return tieneUsr() ? rolPerm(k) : permViejo(k, pordefecto); }
+      function abrirOk() { return !tieneUsr() || (activoOk() && rolPerm('abrir')); }
+      function mismo(k, vacio) { return request.resource.data.get(k, vacio) == resource.data.get(k, vacio); }
+
+      allow read: if request.auth != null
+                  && ( resource == null || esDuena()
+                       || (esDueno() && activoOk())
+                       || (esInvitado() && abrirOk()) );
+
+      allow create: if request.auth != null
+        && request.resource.data.dueno == request.auth.uid
+        && puedeCrear();
+
+      allow update: if esDuena()
+        || ( esDueno() && activoOk()
+             && ( (mismo('invitados', []) && mismo('permisos', {})) || cuentaPuede('compartir') ) )
+        || ( esInvitado() && abrirOk() && perm('guardar', false)
+             && request.resource.data.dueno == resource.data.dueno
+             && mismo('invitados', []) && mismo('permisos', {})
+             && ( perm('campos', false) || (mismo('camposDef', '') && mismo('REEMP', '')) )
+             && ( perm('renombrar', false) || mismo('nombre', '') ) );
+
+      allow delete: if esDuena() || (esDueno() && activoOk() && cuentaPuede('borrar'));
+    }
+  }
+}
+`;
+function copiarTexto(txt,area){
+  const ok=()=>toast("Reglas copiadas: pégalas en Firebase");
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(ok).catch(()=>{ if(area){ area.select(); try{ document.execCommand("copy"); ok(); }catch(_){ toast("Selecciona el texto y cópialo a mano"); } } });
+    return;
+  }
+  if(area){ area.select(); try{ document.execCommand("copy"); ok(); }catch(_){ toast("Selecciona el texto y cópialo a mano"); } }
+}
+function pintarSinReglas(cont,e,reintentar){
+  if(!enLinea()){
+    cont.innerHTML='<div class="aviso">Sin conexión: no puedo leer los usuarios. Vuelve a abrir esta ventana cuando regrese el internet.</div>';
+    return;
+  }
+  cont.innerHTML=`<div class="aviso">Para usar <b>Usuarios y roles</b> hay que pegar <b>una sola vez</b> las reglas nuevas en Firebase:<br><br>
+    1. Toca <b>📋 Copiar reglas</b>.<br>
+    2. Abre <b>console.firebase.google.com</b> → proyecto <b>texto-reemplazo</b> → <b>Firestore Database</b> → pestaña <b>Reglas</b>.<br>
+    3. Borra todo lo que hay, pega y toca <b>Publicar</b>.<br>
+    4. Espera un minuto y toca <b>Volver a intentar</b>.<br><br>
+    <span style="opacity:.7">Detalle técnico: ${esc((e&&(e.code||e.message))||"")}</span></div>
+    <div class="btnrow"><button class="btn pri sm" data-cp>📋 Copiar reglas</button><button class="btn sm" data-re>Volver a intentar</button></div>
+    <textarea readonly style="min-height:170px">${esc(REGLAS_FIRESTORE)}</textarea>`;
+  const area=cont.querySelector("textarea");
+  cont.querySelector("[data-cp]").onclick=()=>copiarTexto(REGLAS_FIRESTORE,area);
+  cont.querySelector("[data-re]").onclick=()=>reintentar&&reintentar();
+}
+
+/* ---- datos de la ventana de Usuarios (solo la dueña los puede leer) ---- */
+let ADM={roles:[],usrs:[],proys:[],cfg:{crear:[]}};
+async function cargarAdmin(){
+  const [roles,usrs,proys,cfg]=await Promise.all([
+    window.FB.listarRoles(), window.FB.listarUsuarios(), window.FB.listarTodos(), window.FB.leerConfig()]);
+  ADM={roles:(roles||[]).sort((a,b)=>String(a.nombre||a.id).localeCompare(String(b.nombre||b.id),"es")),
+       usrs:usrs||[],
+       proys:(proys||[]).sort((a,b)=>String(a.nombre||a.id).localeCompare(String(b.nombre||b.id),"es")),
+       cfg:cfg||{}};
+  if(!Array.isArray(ADM.cfg.crear)) ADM.cfg.crear=[];
+}
+const rolDe=id=>ADM.roles.find(r=>r.id===id)||null;
+const usrDe=c=>ADM.usrs.find(u=>u.id===c)||null;
+function personasAdmin(){
+  const s=new Set();
+  ADM.usrs.forEach(u=>s.add(u.id));
+  ADM.proys.forEach(p=>(p.invitados||[]).forEach(c=>s.add(c)));
+  ADM.cfg.crear.forEach(c=>s.add(c));
+  s.delete(DUENA);
+  return [...s].filter(Boolean).sort();
+}
+function nombreProy(p){
+  const mio=!!(USUARIO && p.dueno===USUARIO.uid);
+  return (p.nombre||p.id)+(mio? "" : " · de "+(p.correoDueno||"otra persona"));
+}
+const correoValido=c=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c);
+function opcionesRol(sel,conVacio){
+  return (conVacio? '<option value="">— sin rol (permisos viejos) —</option>' : "")+
+    ADM.roles.map(r=>`<option value="${esc(r.id)}"${r.id===sel?" selected":""}>${esc(r.nombre||r.id)}</option>`).join("");
+}
+/* los dos roles de arranque: "Invitado" = lo de siempre; "Colaborador" = puede trabajar */
+async function sembrarRoles(){
+  const inv={}; PERM_CLAVES.forEach(k=>{ inv[k]=PERM_INFO[k].def; });
+  const col={...inv};
+  ["guardar","renombrar","campos","hacer_campo","usar_aqui","agregar_campo","borrar_campo",
+   "renombrar_campo","solo_aparicion","corregir","importar_campos","exportar"].forEach(k=>{ col[k]=true; });
+  const ahora=Date.now();
+  await window.FB.guardarRol("invitado",{nombre:"Invitado",permisos:normalizarPerms(inv),creado:ahora,actualizado:ahora});
+  await window.FB.guardarRol("colaborador",{nombre:"Colaborador",permisos:normalizarPerms(col),creado:ahora,actualizado:ahora});
+}
+
+/* ---- 👥 Usuarios y roles (solo la dueña) ---- */
+async function panelUsuarios(){
+  if(!soyDuena()||!hayNube()) return;
+  const cont=abrirHojaU("👥 Usuarios y roles");
+  await pintarAdmin(cont);
+}
+async function pintarAdmin(cont){
+  cont.innerHTML='<div class="hint">Cargando usuarios y roles…</div>';
+  try{
+    await cargarAdmin();
+    if(!ADM.roles.length){ await sembrarRoles(); await cargarAdmin(); }
+  }catch(e){ console.error("usuarios",e); pintarSinReglas(cont,e,()=>pintarAdmin(cont)); return; }
+  cont.innerHTML=`<div class="aviso">🔒 = la nube lo bloquea de verdad. 👁 = solo esconde el botón: quien abre un proyecto ya tiene el PDF y los datos en su navegador.<br>
+    Los cambios le llegan a cada persona cuando vuelve al Inicio o abre un proyecto.</div>
+    <div class="ucaja" id="admUsuarios"></div>
+    <div class="ucaja" id="admNuevo"></div>
+    <div class="ucaja" id="admRoles"></div>`;
+  pintarUsuariosAdm(); pintarNuevoAdm(); pintarRolesAdm();
+}
+/* recarga desde la nube y repinta; los roles solo si hace falta (así no se
+   pierden casillas sin guardar de otro rol) */
+async function refrescarAdm(conRoles){
+  const hoja=$("#hojaU"), y=hoja.scrollTop;
+  try{ await cargarAdmin(); }catch(e){ toast("No pude releer los usuarios: "+(e.code||e.message||"")); return; }
+  pintarUsuariosAdm(); pintarNuevoAdm();
+  if(conRoles) pintarRolesAdm();
+  hoja.scrollTop=y;
+}
+async function hacerAdm(btn,fn,conRoles){
+  if(btn) btn.disabled=true;
+  try{ await fn(); }
+  catch(e){ console.error(e); toast("No se guardó: "+(e.code||e.message||"")); }
+  finally{ if(btn) btn.disabled=false; }
+  await refrescarAdm(conRoles);
+}
+async function seguirSinGuardar(){
+  return !SUCIOS.size || await confirmar("Hay un rol con permisos sin guardar. Si sigues, esos cambios se pierden.","Seguir");
+}
+function pintarUsuariosAdm(){
+  const box=$("#admUsuarios"); if(!box) return;
+  const gente=personasAdmin();
+  box.innerHTML=`<div class="utit">Usuarios (${gente.length})</div>
+    <div class="ufila"><div class="uhead"><span class="uc">${esc(DUENA)}</span><span class="ubadge">★ dueña</span></div>
+    <div class="hint">Puede todo, siempre. No tiene rol.</div></div>`;
+  if(!gente.length) box.insertAdjacentHTML("beforeend",'<div class="hint">Todavía no hay nadie más. Agrégalo abajo o invítalo desde el 👤 de un proyecto.</div>');
+  gente.forEach(c=>box.appendChild(tarjetaUsuario(c)));
+}
+function tarjetaUsuario(c){
+  const u=usrDe(c), rol=u&&rolDe(u.rolId), viejoCrear=ADM.cfg.crear.includes(c);
+  const proys=ADM.proys.filter(p=>(p.invitados||[]).includes(c));
+  const libres=ADM.proys.filter(p=>!(p.invitados||[]).includes(c));
+  const f={usr:u,rol,crear:viejoCrear,viejo:null};
+  const crea=efectivoDe(f,"crear");
+  const el=document.createElement("div"); el.className="ufila"; el.dataset.correo=c;
+  el.innerHTML=`
+    <div class="uhead">
+      <span class="uc">${u&&u.nombre? esc(u.nombre)+" · " : ""}${esc(c)}</span>
+      ${!u?'<span class="ubadge gris">sin rol · permisos viejos</span>':""}
+      ${u&&u.activo===false?'<span class="ubadge rojo">desactivado</span>':""}
+      ${u&&!rol?'<span class="ubadge rojo">su rol ya no existe</span>':""}
+      <span class="grow"></span>
+      ${u?'<button class="btn sm" data-nom title="Ponerle o cambiarle el nombre">✏️ Nombre</button>':""}
+      <button class="btn sm" data-todo title="Quitarle todos los proyectos y el acceso">🗑 Quitar de todo</button>
+    </div>
+    <div class="ulinea">Rol: <select data-rol>${opcionesRol(u?u.rolId:"",!u)}</select>
+      <label class="mini"${u?"":' title="Ponle un rol primero"'}><input type="checkbox" data-act${!u||u.activo!==false?" checked":""}${u?"":" disabled"}> Activo</label></div>
+    <div class="ulinea">➕ Crear proyectos propios: <b>${crea?"✅ Sí":"⬜ No"}</b>
+      <span class="hint">${u? "(lo da su rol: para quitarlo, cámbiale el rol)" : (viejoCrear? "(lista vieja)" : "")}</span>
+      ${!u&&viejoCrear?'<button class="btn sm" data-qcrear>Quitar este permiso</button>':""}</div>
+    ${u? `<div class="hint">En sus propios proyectos y en la pantalla de inicio:</div>${chipsPerms(f,true)}
+          <div class="hint">En los proyectos que le comparten:</div>${chipsPerms(f,false)}` : ""}
+    <div class="utit" style="font-size:12px">Proyectos (${proys.length})</div>
+    <div data-proys></div>
+    <div class="ulinea"><select data-nuevo${libres.length?"":" disabled"}>${libres.length? libres.map(p=>`<option value="${esc(p.id)}">${esc(nombreProy(p))}</option>`).join("") : '<option value="">— ya tiene todos —</option>'}</select>
+      <button class="btn sm" data-add${libres.length?"":" disabled"}>+ Agregar proyecto</button></div>`;
+  const lp=el.querySelector("[data-proys]");
+  if(!proys.length) lp.innerHTML='<div class="hint">Ninguno todavía.</div>';
+  proys.forEach(p=>{
+    const r=document.createElement("div"); r.className="uproy";
+    r.innerHTML=`<div class="uproy-l"><span class="nm">${esc(nombreProy(p))}</span><button class="btn sm" data-q title="Quitarle este proyecto">🗑 Quitar</button></div>`+
+      (!u? `<div class="hint">Permisos viejos de este proyecto:</div>${chipsPerms({usr:null,rol:null,crear:viejoCrear,viejo:(p.permisos||{})[c]||{}},false)}` : "");
+    const bq=r.querySelector("[data-q]");
+    bq.onclick=async()=>{
+      if(!(await confirmar(`¿Quitarle «${p.nombre||p.id}» a ${c}? Pierde el acceso a ese proyecto.`,"Quitar"))) return;
+      await hacerAdm(bq,async()=>{ await window.FB.sacar(p.id,c); toast("Proyecto quitado"); });
+    };
+    lp.appendChild(r);
+  });
+  const q=s=>el.querySelector(s);
+  q("[data-rol]").onchange=async ev=>{
+    const v=ev.target.value; if(!v) return;
+    const ahora=Date.now();
+    await hacerAdm(ev.target,async()=>{
+      await window.FB.guardarUsuario(c, u? {rolId:v,actualizado:ahora} : {correo:c,rolId:v,activo:true,creado:ahora,actualizado:ahora});
+      toast("Rol guardado: "+((rolDe(v)||{}).nombre||v));
+    });
+  };
+  q("[data-act]").onchange=async ev=>{
+    const on=ev.target.checked;
+    await hacerAdm(ev.target,async()=>{
+      await window.FB.guardarUsuario(c,{activo:on,actualizado:Date.now()});
+      toast(on? "Activado" : "Desactivado: pierde el acceso sin borrar nada");
+    });
+  };
+  if(q("[data-nom]")) q("[data-nom]").onclick=async ev=>{
+    const n=await askText("Nombre para "+c,(u&&u.nombre)||""); if(n===null) return;
+    await hacerAdm(ev.target,async()=>{ await window.FB.guardarUsuario(c,{nombre:n,actualizado:Date.now()}); toast("Nombre guardado"); });
+  };
+  if(q("[data-qcrear]")) q("[data-qcrear]").onclick=async ev=>{
+    if(!(await confirmar(`¿Quitarle a ${c} el permiso de crear proyectos propios?`,"Quitar"))) return;
+    await hacerAdm(ev.target,async()=>{ await window.FB.guardarConfig({crear:ADM.cfg.crear.filter(x=>x!==c)}); toast("Permiso quitado"); });
+  };
+  q("[data-add]").onclick=async ev=>{
+    const pid=q("[data-nuevo]").value; if(!pid) return;
+    await hacerAdm(ev.target,async()=>{ await window.FB.invitar(pid,c); toast("Proyecto agregado"); });
+  };
+  q("[data-todo]").onclick=async ev=>{
+    const extra=[proys.length? `sus ${proys.length} proyecto${proys.length>1?"s":""}`:"", viejoCrear?"el permiso de crear":"", u?"su rol":""].filter(Boolean).join(", ");
+    if(!(await confirmar(`¿Quitar a ${c} de todo? Pierde ${extra||"el acceso"}. Luego lo puedes volver a agregar.`,"Quitar de todo"))) return;
+    await hacerAdm(ev.target,async()=>{
+      for(const p of proys) await window.FB.sacar(p.id,c);
+      if(viejoCrear) await window.FB.guardarConfig({crear:ADM.cfg.crear.filter(x=>x!==c)});
+      if(u) await window.FB.borrarUsuario(c);
+      toast(c+" quedó sin acceso");
+    });
+  };
+  return el;
+}
+function pintarNuevoAdm(){
+  const box=$("#admNuevo"); if(!box) return;
+  box.innerHTML=`<div class="utit">➕ Agregar usuario</div>
+    <div class="row2"><input type="text" data-c placeholder="correo@gmail.com (con el que entra a Google)"><input type="text" data-n placeholder="Nombre (opcional)"></div>
+    <div class="ulinea">Rol: <select data-r>${opcionesRol("invitado",false)}</select></div>
+    <div class="hint">Proyectos que le das:</div>
+    <div class="pchecks">${ADM.proys.map(p=>`<label class="mini"><input type="checkbox" value="${esc(p.id)}"> ${esc(nombreProy(p))}</label>`).join("")||'<span class="hint">No hay proyectos en la nube.</span>'}</div>
+    <div class="btnrow"><button class="btn pri sm" data-ok>Agregar usuario</button></div>`;
+  const b=box.querySelector("[data-ok]");
+  b.onclick=async()=>{
+    const c=box.querySelector("[data-c]").value.trim().toLowerCase(), n=box.querySelector("[data-n]").value.trim();
+    const r=box.querySelector("[data-r]").value;
+    if(!correoValido(c)){ toast("Escribe un correo válido"); return; }
+    if(c===DUENA){ toast("La dueña ya puede todo"); return; }
+    if(personasAdmin().includes(c)){ toast("Esa persona ya está en la lista: cámbiala arriba"); return; }
+    if(!r){ toast("Elige un rol"); return; }
+    const ids=[...box.querySelectorAll(".pchecks input:checked")].map(x=>x.value);
+    const ahora=Date.now();
+    await hacerAdm(b,async()=>{
+      await window.FB.guardarUsuario(c,{correo:c,nombre:n,rolId:r,activo:true,creado:ahora,actualizado:ahora});
+      for(const id of ids) await window.FB.invitar(id,c);
+      toast(`${c} agregado${ids.length?` con ${ids.length} proyecto${ids.length>1?"s":""}`:""}`);
+    });
+  };
+}
+function pintarRolesAdm(){
+  const box=$("#admRoles"); if(!box) return;
+  SUCIOS.clear(); HOJA_SUCIA=false;
+  box.innerHTML=`<div class="utit">Roles (${ADM.roles.length})</div>
+    <div class="hint">Cada persona tiene un rol. Si cambias las casillas de un rol, cambia para todas las personas que lo tienen.
+    Si apagas una casilla, se apagan las de adentro; si prendes una de adentro, se prende la de arriba.</div>`;
+  ADM.roles.forEach(r=>box.appendChild(tarjetaRol(r)));
+  const nuevo=document.createElement("div"); nuevo.className="ufila";
+  nuevo.innerHTML=`<div class="utit" style="font-size:12px">➕ Nuevo rol</div>
+    <div class="ulinea"><input type="text" data-n placeholder="Nombre del rol (ej: Ayudante)" style="flex:1;min-width:180px">
+      <span class="hint">copiando las casillas de</span><select data-de>${opcionesRol("invitado",false)}</select>
+      <button class="btn sm" data-ok>Crear rol</button></div>`;
+  const b=nuevo.querySelector("[data-ok]");
+  b.onclick=async()=>{
+    const n=nuevo.querySelector("[data-n]").value.trim();
+    if(!n){ toast("Escribe el nombre del rol"); return; }
+    if(ADM.roles.some(r=>String(r.nombre||"").trim().toLowerCase()===n.toLowerCase())){ toast("Ya hay un rol con ese nombre"); return; }
+    if(!(await seguirSinGuardar())) return;
+    let id=slug(n), i=2; while(rolDe(id)) id=slug(n)+"_"+(i++);
+    const base=rolDe(nuevo.querySelector("[data-de]").value), ahora=Date.now();
+    await hacerAdm(b,async()=>{
+      await window.FB.guardarRol(id,{nombre:n,permisos:normalizarPerms(valoresDeRol(base)),creado:ahora,actualizado:ahora});
+      ROL_ABIERTO.add(id); toast("Rol creado: ábrelo y marca sus casillas");
+    },true);
+  };
+  box.appendChild(nuevo);
+}
+function tarjetaRol(r){
+  const n=ADM.usrs.filter(u=>u.rolId===r.id).length;
+  const d=document.createElement("details"); d.className="ufila urol"; d.dataset.rol=r.id;
+  if(ROL_ABIERTO.has(r.id)) d.open=true;
+  d.innerHTML=`<summary><b>${esc(r.nombre||r.id)}</b><span class="hint">(${esc(r.id)}) · ${n} persona${n===1?"":"s"}</span><span class="grow"></span><span class="hint">▼ permisos</span></summary>`;
+  d.addEventListener("toggle",()=>{ d.open? ROL_ABIERTO.add(r.id) : ROL_ABIERTO.delete(r.id); });
+  const det=document.createElement("div"); det.style.cssText="display:flex;flex-direction:column;gap:10px;margin-top:10px";
+  const vals=normalizarPerms(valoresDeRol(r));
+  const nota=document.createElement("div"); nota.className="pnota";
+  const fila=document.createElement("div"); fila.className="btnrow";
+  fila.innerHTML=`<button class="btn pri sm" data-g>Guardar permisos</button><button class="btn sm" data-rn>✏️ Renombrar rol</button>
+    <button class="btn sm" data-b${n?` disabled title="Primero cámbiales el rol a sus ${n} persona${n>1?"s":""}"`:""}>🗑 Borrar rol</button>`;
+  const bg=fila.querySelector("[data-g]");
+  pintarCasillas(det,vals,nota,()=>{ SUCIOS.add(r.id); HOJA_SUCIA=true; bg.textContent="Guardar permisos •"; });
+  det.appendChild(nota); det.appendChild(fila);
+  bg.onclick=async()=>{
+    bg.disabled=true; bg.textContent="Guardando…";
+    try{
+      const p=normalizarPerms(vals);
+      await window.FB.guardarRol(r.id,{nombre:r.nombre||r.id,permisos:p,creado:r.creado||Date.now(),actualizado:Date.now()});
+      r.permisos=p; SUCIOS.delete(r.id); HOJA_SUCIA=SUCIOS.size>0;
+      bg.textContent="✓ Guardado"; toast("Permisos del rol guardados");
+      setTimeout(()=>{ bg.textContent="Guardar permisos"; bg.disabled=false; },1500);
+      await refrescarAdm(false);
+    }catch(e){ console.error(e); toast("No se guardó: "+(e.code||e.message||"")); bg.disabled=false; bg.textContent="Guardar permisos •"; }
+  };
+  fila.querySelector("[data-rn]").onclick=async ev=>{
+    const nn=await askText("Nuevo nombre del rol",r.nombre||r.id); if(!nn||nn===r.nombre) return;
+    if(!(await seguirSinGuardar())) return;
+    await hacerAdm(ev.target,async()=>{
+      await window.FB.guardarRol(r.id,{nombre:nn,permisos:normalizarPerms(valoresDeRol(r)),creado:r.creado||Date.now(),actualizado:Date.now()});
+      toast("Rol renombrado");
+    },true);
+  };
+  fila.querySelector("[data-b]").onclick=async ev=>{
+    if(n) return;
+    if(!(await confirmar(`¿Borrar el rol «${r.nombre||r.id}»? Nadie lo tiene.`,"Borrar"))) return;
+    if(!(await seguirSinGuardar())) return;
+    await hacerAdm(ev.target,async()=>{ await window.FB.borrarRol(r.id); ROL_ABIERTO.delete(r.id); toast("Rol borrado"); },true);
+  };
+  d.appendChild(det);
+  return d;
+}
+
+/* ---- 👤 Compartir un proyecto: quién lo tiene, qué puede, quitar ---- */
+async function panelCompartir(p){
+  const cont=abrirHojaU("👤 Compartir «"+(p.nombre||p.id)+"»");
+  const pinta=async()=>{
+    const hoja=$("#hojaU"), y=hoja.scrollTop;
+    cont.innerHTML='<div class="hint">Cargando…</div>';
+    try{ const d=await window.FB.leerDoc(p.id); if(d){ p.invitados=d.invitados||[]; p.permisos=d.permisos||{}; } }
+    catch(e){ console.warn("compartir",e); }
+    let roles=false;                         /* true = la dueña con las reglas nuevas */
+    if(soyDuena()){ try{ await cargarAdmin(); roles=true; }catch(_){} }
+    const inv=(p.invitados||[]).slice().sort();
+    cont.innerHTML="";
+    const caja=document.createElement("div"); caja.className="ucaja";
+    caja.innerHTML=`<div class="utit">Invitar a alguien</div>
+      <div class="ulinea"><input type="text" data-c placeholder="correo@gmail.com" style="flex:1;min-width:200px">
+      ${roles&&ADM.roles.length?`<select data-r title="Rol, si la persona es nueva">${opcionesRol("invitado",false)}</select>`:""}
+      <button class="btn pri sm" data-ok>+ Invitar</button></div>
+      <div class="hint">${roles? "Si la persona es nueva, entra con el rol que elijas. Si ya tiene rol, se queda con el suyo."
+        : soyDuena()? "Para dar permisos por rol, abre una vez 👥 Usuarios (ahí están los pasos)."
+        : "Sus permisos los pone la dueña con el rol de cada persona."}</div>`;
+    cont.appendChild(caja);
+    const bi=caja.querySelector("[data-ok]");
+    bi.onclick=async()=>{
+      const c=caja.querySelector("[data-c]").value.trim().toLowerCase();
+      if(!correoValido(c)){ toast("Ese correo no parece válido"); return; }
+      if(c===DUENA){ toast("La dueña ya tiene acceso a todo"); return; }
+      if(inv.includes(c)){ toast("Esa persona ya tiene este proyecto"); return; }
+      bi.disabled=true;
+      try{
+        await window.FB.invitar(p.id,c);
+        const sr=caja.querySelector("[data-r]");
+        if(roles && sr && sr.value && !usrDe(c)){
+          const ahora=Date.now();
+          await window.FB.guardarUsuario(c,{correo:c,rolId:sr.value,activo:true,creado:ahora,actualizado:ahora});
+        }
+        toast("Invitado: "+c);
+      }catch(e){ console.error(e); toast(esDePermiso(e)? "No tienes permiso para compartir este proyecto" : "No pude invitar: "+(e.code||e.message||"")); }
+      finally{ bi.disabled=false; }
+      await pinta();
+    };
+    const lista=document.createElement("div"); lista.className="ucaja";
+    lista.innerHTML=`<div class="utit">Tienen este proyecto (${inv.length})</div>`;
+    if(!inv.length) lista.insertAdjacentHTML("beforeend",'<div class="hint">Todavía no compartes este proyecto con nadie.</div>');
+    inv.forEach(c=>{
+      const u=roles? usrDe(c) : null, rol=u&&rolDe(u.rolId);
+      const f={usr:u,rol,crear:false,viejo:(p.permisos||{})[c]||{}};
+      const el=document.createElement("div"); el.className="ufila";
+      el.innerHTML=`<div class="uhead"><span class="uc">${esc(c)}</span>
+          ${soyDuena()? (u? `<span class="ubadge">${esc(rol?(rol.nombre||rol.id):"rol borrado")}</span>${u.activo===false?'<span class="ubadge rojo">desactivado</span>':""}`
+                          : '<span class="ubadge gris">sin rol · permisos viejos de este proyecto</span>') : ""}
+          <span class="grow"></span><button class="btn sm" data-q title="Quitarle este proyecto">🗑 Quitar</button></div>
+        ${roles&&ADM.roles.length? `<div class="ulinea">Rol: <select data-r>${opcionesRol(u?u.rolId:"",!u)}</select><span class="hint">vale para todos sus proyectos</span></div>` : ""}
+        ${soyDuena()? `<div class="hint">En este proyecto puede:</div>${chipsPerms(f,false)}` : ""}`;
+      const bq=el.querySelector("[data-q]");
+      bq.onclick=async()=>{
+        if(!(await confirmar(`¿Quitar a ${c} de «${p.nombre||p.id}»? Pierde el acceso a este proyecto.`,"Quitar"))) return;
+        bq.disabled=true;
+        try{ await window.FB.sacar(p.id,c); toast("Acceso quitado a "+c); }
+        catch(e){ console.error(e); toast(esDePermiso(e)? "No tienes permiso para quitar personas" : "No pude quitarlo: "+(e.code||e.message||"")); }
+        await pinta();
+      };
+      const sr=el.querySelector("[data-r]");
+      if(sr) sr.onchange=async()=>{
+        const v=sr.value; if(!v) return;
+        if(!(await confirmar(`¿Cambiar el rol de ${c} a «${(rolDe(v)||{}).nombre||v}»? Vale para TODOS sus proyectos.`,"Cambiar"))){ sr.value=u?u.rolId:""; return; }
+        const ahora=Date.now();
+        try{ await window.FB.guardarUsuario(c, u? {rolId:v,actualizado:ahora} : {correo:c,rolId:v,activo:true,creado:ahora,actualizado:ahora}); toast("Rol guardado"); }
+        catch(e){ console.error(e); toast("No se guardó: "+(e.code||e.message||"")); }
+        await pinta();
+      };
+      lista.appendChild(el);
+    });
+    cont.appendChild(lista);
+    if(soyDuena()) cont.insertAdjacentHTML("beforeend",'<div class="hint">Las casillas de cada rol se cambian en 👥 Usuarios → Roles.</div>');
+    hoja.scrollTop=y;
+  };
+  await pinta();
+}
+
+/* ---- ⧉ Duplicar: copia idéntica con id nuevo, su propio PDF y sin invitados ---- */
+async function nombreOcupado(n){
+  const t=String(n).trim().toLowerCase();
+  const ix=await leerProyectos();
+  if(Object.keys(ix).some(x=>x.trim().toLowerCase()===t)) return true;
+  const yo=USUARIO&&USUARIO.uid;
+  return (NUBE||[]).some(p=>p.dueno===yo && String(p.nombre||"").trim().toLowerCase()===t);
+}
+async function pedirNombreLibre(titulo,sug){
+  let n=sug, tit=titulo;
+  for(;;){
+    n=await askText(tit,n); if(!n) return null;
+    n=n.trim(); if(!n) return null;
+    if(!(await nombreOcupado(n))) return n;
+    tit="Ya tienes un proyecto con ese nombre. Escribe otro";
+  }
+}
+async function nubeDuplicar(p){
+  if(!hayNube()) return;
+  if(!enLinea()){ toast("Sin conexión: no puedo duplicar ahora"); return; }
+  const n=await pedirNombreLibre("Nombre de la copia",(p.nombre||p.id)+" (copia)");
+  if(!n) return;
+  const idN=nuevoIdNube(); let subido=false;
+  toast("Duplicando…");
+  try{
+    const d=await window.FB.leerDoc(p.id);
+    if(!d){ toast("Ese proyecto ya no está"); return; }
+    const bytes=await window.FB.bajarPdf(p.dueno||d.dueno,p.id);
+    const copia={...d};
+    delete copia.invitados; delete copia.permisos;           /* la copia nace sin invitados */
+    if(!copia.camposDef) copia.camposDef=JSON.stringify(((d.S&&d.S.campos)||[]).map(c=>[c.clave,c.etiqueta,!!c.bloque]));
+    Object.assign(copia,{nombre:n,dueno:USUARIO.uid,correoDueno:USUARIO.email||"",actualizado:Date.now(),fecha:new Date().toISOString()});
+    await window.FB.subirPdf(USUARIO.uid,idN,bytes); subido=true;
+    await window.FB.guardarDoc(idN,copia);
+    toast(`Copia lista: «${n}»`);
+    renderNube();
+  }catch(e){
+    console.error("duplicar",e);
+    if(subido){ try{ await window.FB.borrarPdf(USUARIO.uid,idN); }catch(_){} }   /* sin PDF huérfano */
+    toast(esDePermiso(e)? "Tu cuenta no tiene permiso para crear proyectos" : "No pude duplicar: "+(e.code||e.message||""));
+  }
+}
+async function duplicarLocal(nombre){
+  const ix=await leerProyectos(), m=ix[nombre];
+  if(!m){ toast("Ese proyecto ya no está"); return; }
+  let d=null;
+  try{ const r=await almGet(m.k); d=r?JSON.parse(r.value):null; }catch(_){}
+  if(!d){ toast("No encontré los datos de ese proyecto"); return; }
+  const n=await pedirNombreLibre("Nombre de la copia",nombre+" (copia)");
+  if(!n) return;
+  try{
+    d.nombre=n; d.fecha=new Date().toISOString();
+    const k=claveProy(n);
+    await almSet(k,JSON.stringify(d));
+    const ix2=await leerProyectos();                 /* sin idNube ni pdfEnNube: es otro proyecto */
+    ix2[n]={k,paginas:m.paginas,conPdf:!!d.pdf,fecha:d.fecha};
+    await almSet(KEY_PROY,JSON.stringify(ix2));
+    toast(`Copia lista: «${n}»`);
+    renderProyectos();
+  }catch(e){ console.error(e); toast("No pude duplicar aquí: "+(e.message||"")); }
+}
+
+$("#btnUsuarios").onclick=panelUsuarios;
 
 /* ============ arranque ============ */
 pintarTodo();
@@ -4250,7 +5104,27 @@ try{
       if(!r.ok) throw new Error("descarga "+r.status);
       return await r.arrayBuffer();
     },
-    borrarPdf:(uid,id)=>G.deleteObject(rutaPdf(uid,id))
+    borrarPdf:(uid,id)=>G.deleteObject(rutaPdf(uid,id)),
+
+    /* (v011) usuarios y roles. Leer la ficha propia no debe tumbar nada: con las
+       reglas viejas responde permission-denied y la app sigue con los permisos
+       viejos (null). Listar sí lanza el error: la ventana de Usuarios lo explica. */
+    leerUsuario:async c=>{ try{ const s=await F.getDoc(F.doc(db,"usuarios",c)); return s.exists()?{id:s.id,...s.data()}:null; }catch(_){ return null; } },
+    leerRol:async id=>{ try{ const s=await F.getDoc(F.doc(db,"roles",id)); return s.exists()?{id:s.id,...s.data()}:null; }catch(_){ return null; } },
+    listarUsuarios:async()=>{ const r=[]; (await F.getDocs(F.collection(db,"usuarios"))).forEach(d=>r.push({id:d.id,...d.data()})); return r; },
+    listarRoles:async()=>{ const r=[]; (await F.getDocs(F.collection(db,"roles"))).forEach(d=>r.push({id:d.id,...d.data()})); return r; },
+    guardarUsuario:(c,d)=>F.setDoc(F.doc(db,"usuarios",c),d,{merge:true}),
+    borrarUsuario:c=>F.deleteDoc(F.doc(db,"usuarios",c)),
+    guardarRol:(id,d)=>F.setDoc(F.doc(db,"roles",id),d),          /* el rol entero: sin merge */
+    borrarRol:id=>F.deleteDoc(F.doc(db,"roles",id)),
+    /* solo la dueña: todos los proyectos, de cualquier dueño */
+    listarTodos:async()=>{ const r=[]; (await F.getDocs(F.collection(db,"proyectos"))).forEach(d=>r.push({id:d.id,...d.data()})); return r; },
+    /* sacar a alguien de un proyecto en UNA escritura: de invitados y de su mapa
+       viejo de permisos. FieldPath porque el correo lleva puntos. */
+    sacar:(id,correo)=>F.updateDoc(F.doc(db,"proyectos",id),
+      "invitados",F.arrayRemove(correo),
+      new F.FieldPath("permisos",correo),F.deleteField(),
+      "actualizado",Date.now())
   };
 }catch(e){
   console.warn("Firebase no disponible, se sigue en modo local:",e);
