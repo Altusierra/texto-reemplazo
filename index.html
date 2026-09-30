@@ -1466,6 +1466,49 @@ function negItem(cx,vp,page,P,it,ESC){
     return neg;
   }catch(_){ return ""; }
 }
+/* (v015 · 30-sep-2026) LA FAMILIA DE LETRA, SACADA DE LA TINTA REAL.
+   Root cause que encontró la dueña: en un PDF-foto no hay datos de la fuente, así que la app
+   la ADIVINA (por defecto Helvetica, sin remates). Las letras del valor nuevo que SÍ están en
+   la hoja se dibujan con la tinta real (salen bien); las que NO están se dibujan con esa fuente
+   adivinada. Si la hoja es con remates (serif) y se adivina sin remates, esas letras "no
+   capturadas" salen distintas. Aquí se mira la tinta REAL de la hoja y se elige la familia
+   (con remates / sin remates / de máquina) que de verdad se parece, para que las letras de
+   respaldo copien la estructura de las capturadas. Solo actúa en PDF-foto (sin nombre de fuente). */
+/* ¿el asta vertical de una letra tiene remates (serif) arriba? Se mide el "ensanchamiento":
+   ancho del trazo izquierdo en la punta de arriba / ancho del mismo trazo en su parte media.
+   Sin remates ≈ 1; con remates > 1.4 (el remate ensancha la punta). Devuelve 0 si no sirve. */
+function flareAsta(mask){
+  try{
+    const w=mask.width,h=mask.height,D=mask.getContext("2d").getImageData(0,0,w,h).data;
+    let x0=w,x1=-1,y0=h,y1=-1;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++) if(D[(y*w+x)*4+3]>80){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    if(x1<x0) return 0; const bh=y1-y0+1; if(bh<12) return 0;
+    const runIzq=y=>{ let x=x0; while(x<=x1 && !(D[(y*w+x)*4+3]>80)) x++; if(x>x1) return 0; let r=0; while(x<=x1 && D[(y*w+x)*4+3]>80){ r++; x++; } return r; };
+    const band=(a,b)=>{ const v=[]; for(let y=y0+Math.floor(bh*a);y<y0+Math.floor(bh*b);y++){ const r=runIzq(y); if(r>0) v.push(r); } v.sort((p,q)=>p-q); return v.length? v[v.length>>1] : 0; };
+    const stem=Math.min(band(0.25,0.45)||1e9, band(0.55,0.75)||1e9);   /* el asta, lejos de remates y barras */
+    const top=band(0.0,0.12);
+    return (stem>0 && stem<1e9 && top>0)? top/stem : 0;
+  }catch(_){ return 0; }
+}
+/* La familia de letra sacada de la tinta real. CONSERVADORA: solo cambia a CON REMATES cuando
+   hay una señal clara; si no, deja la que ya se adivinó (sans, que es lo normal). Así una hoja
+   sin remates NUNCA se daña. */
+/* La familia sacada de las PROPIAS letras del campo (no de toda la hoja: una hoja puede tener
+   varias fuentes —encabezado con remates, nombres sin remates—). Solo se miran letras con asta
+   vertical limpia (I H L U K N), que separan claro: sin remates ≈ 1, con remates ≈ 2 o más.
+   CONSERVADORA: solo cambia a CON REMATES cuando la señal es clara; si no, deja la adivinanza
+   (sans, lo normal). Así un campo sin remates NUNCA se daña. */
+function familiaPorLocales(loc,propio,est){
+  try{
+    if(!loc) return null;
+    const buenas="IHLUKN", rs=[];
+    for(const c of buenas){ const arr=loc[c]; if(!arr) continue;
+      for(const e of arr){ if(propio && (e.x<propio[0]||e.x>propio[1])) continue; if(!e.mask) continue; const f=flareAsta(e.mask); if(f>0){ rs.push(f); break; } } }
+    if(rs.length<2) return null;                       /* pocas astas propias seguras: no se cambia nada */
+    rs.sort((a,b)=>a-b); const med=rs[rs.length>>1];
+    return med>=1.6? '"Times New Roman",Times,serif' : null;   /* remates claros -> serif; si no, se deja la adivinanza */
+  }catch(_){ return null; }
+}
 function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs,listaPg){
   const campo=S.campos.find(f=>f.clave===r.clave);
   const nuevo=campo? String(campo.valor==null?"":campo.valor).trim() : "";
@@ -1481,13 +1524,13 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs,listaPg){
   const pista=nombre+" "+gen;
   /* OJO con el orden: `gen` vale "sans-serif", y /serif/ coincide dentro de esa
      palabra. Si se prueba serif primero, TODA fuente sans acaba dibujada en Times. */
-  const fam=/courier|mono|consol/i.test(pista)? '"Courier New",monospace'
+  let fam=/courier|mono|consol/i.test(pista)? '"Courier New",monospace'
           : (/sans/i.test(gen) || /helvetica|arial|calibri|verdana|tahoma|segoe|roboto|lato|futura|gill|myriad|frutiger/i.test(nombre))
             ? "Helvetica,Arial,sans-serif"
           : /times|serif|roman|georgia|garamond|minion|book|cambria|palatino/i.test(pista)? '"Times New Roman",Times,serif'
           : "Helvetica,Arial,sans-serif";
   /* la fuente real del PDF primero; la genérica solo como respaldo si no cargó */
-  const famR = FT.viva? `"${FT.viva}",${fam}` : fam;
+  let famR = FT.viva? `"${FT.viva}",${fam}` : fam;
   const cur=/italic|oblique/i.test(pista)?"italic ":"";
   let neg=/bold|black|heavy|semibold|demibold|[-,_ ]bd\b|[-,_ ](7|8|9)00\b/i.test(pista)?"bold ":"";
   if(!neg && !nombre){                       /* el PDF no dio el nombre: se mide la tinta */
@@ -1608,6 +1651,12 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs,listaPg){
     reglaFija: mod&&letras&&letras.hPorTam? mod.T0*letras.hPorTam : 0,   /* (v014) la regla (altura) del modelo manda */
     yl:vp.convertToViewportPoint(x1o,base)[1]/ESC,
     propio:[vp.convertToViewportPoint(x1o,base)[0]/ESC-T0*0.3, vp.convertToViewportPoint(x2o,base)[0]/ESC+T0*0.1]};
+  /* (v015) PDF-foto: la familia de respaldo se saca de las PROPIAS letras del campo, para que
+     las letras que no están en la hoja copien los remates/estructura de las capturadas */
+  if(!nombre && !conPlancha && letras && letras.v2){ try{
+    const loc=localesDe(letras,cvOrig,ESC,op.yl,T0), fd=familiaPorLocales(loc,op.propio,{neg:!!neg,cur:!!cur});
+    if(fd && fd!==fam){ fam=fd; famR=FT.viva?`"${FT.viva}",${fam}`:fam; est.fam=/times|serif/i.test(fam)?"serif":/courier|mono/i.test(fam)?"mono":"sans"; }
+  }catch(_){} }
   const T0f=letras? tamFuenteMedida(letras,cvOrig,ESC,op,T0,famR,est) : T0;   /* (v012) respaldo: misma altura de mayúscula */
   if(letras && med){ try{
     const v=viejo.replace(/\s+/g," ").trim(), nL=(v.match(/\S(?=\S)/g)||[]).length;
