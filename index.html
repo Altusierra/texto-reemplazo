@@ -707,6 +707,7 @@ function renderCampos(){
       <div class="top">
         <input type="text" data-k="etiqueta" value="${esc(f.etiqueta)}" placeholder="Nombre del campo">
         <span class="clave" title="Insertar en el cuerpo">{{${esc(f.clave)}}}</span>
+        ${MODO==="pdf"?`<button data-modelo="1" class="btn icon sm" title="${f.modelo?'Este es el campo MODELO: los demás del mismo tamaño se copian a él. Clic para quitar':'Si este campo salió bien, márcalo: los demás del mismo tamaño se copiarán a él (mismo tamaño y grosor)'}" style="width:auto;padding:0 8px;font-size:12px;${f.modelo?'background:#ffd54a;color:#222;border-color:#e0b83a;':''}">${f.modelo?'★ Modelo':'☆ Modelo'}</button>`:""}
         <button class="btn icon sm" data-del="1" title="Eliminar">✕</button>
       </div>
       <input type="text" data-k="valor" value="${esc(f.valor)}" placeholder="Valor">
@@ -729,6 +730,9 @@ function renderCampos(){
     el.querySelector('[data-k=valor]').oninput=ev=>{ f.valor=ev.target.value; renderHoja(); pedirPrevia(); tocado(); };
     el.querySelector('[data-k=bloque]').onchange=ev=>{ f.bloque=ev.target.checked; renderHoja(); };
     el.querySelector('[data-del]').onclick=()=>{ S.campos.splice(i,1); quitarReemplazos(f.clave); pintarTodo(); };
+    { const bm=el.querySelector('[data-modelo]');        /* (v014) marcar/quitar este campo como modelo bueno */
+      if(bm) bm.onclick=()=>{ f.modelo=!f.modelo; renderCampos(); pedirPrevia(); tocado();
+        toast(f.modelo?"★ Modelo: los demás campos se copiarán a este (mismo tamaño y grosor)":"Ya no es modelo"); }; }
     el.querySelector('.clave').onclick=()=>insertar(`{{${f.clave}}}`);
     el.querySelectorAll('[data-solo]').forEach(b=>{
       b.onclick=()=>{
@@ -976,9 +980,16 @@ function rellenarFondo(cx,r,tinta){
        base: copiar vecinos solo traería restos del halo de las letras */
     let ev=0,nv=0; for(let y=ay;y<by;y++) for(let x=ax;x<bx;x++){ if(!limpio(x,y)) continue; const a=A(x,y);
       ev+=(RS[a*3]**2+RS[a*3+1]**2+RS[a*3+2]**2)/3; nv++; }
-    const conDibujo=nv>20 && Math.sqrt(ev/nv)>4;
+    const FN=aniso? null : parteFina(RS,ok,AW,AH);                     /* (v013) lo fino (el grano), antes de rellenar */
+    let eg=0,ng=0; if(FN) for(let y=ay;y<by;y++) for(let x=ax;x<bx;x++){ if(!limpio(x,y)) continue; const a=A(x,y); if(!FN.hv[a]) continue;
+      eg+=((RS[a*3]-FN.HP[a*3])**2+(RS[a*3+1]-FN.HP[a*3+1])**2+(RS[a*3+2]-FN.HP[a*3+2])**2)/3; ng++; }
+    const grueso=ng>20? Math.sqrt(eg/ng) : 0;                           /* (v013) manchas suaves del papel, sin el grano */
+    const conDibujo=nv>20 && (Math.sqrt(ev/nv)>4 || grueso>1.2);       /* (v013) papel con manchas suaves: también se promedia */
     if(!conDibujo) for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++) if(hueco[I(x,y)]){ const a=A(x,y); RS[a*3]=RS[a*3+1]=RS[a*3+2]=0; ok[a]=1; }
     let faltan=[]; if(conDibujo) for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++) if(hueco[I(x,y)]) faltan.push(A(x,y));
+    const RSc=FN&&faltan.length? RS.slice() : null;                    /* (v013) se promedia lo grueso, sin el grano del borde */
+    const hs=RSc? faltan.slice() : null;                               /* (v013) los píxeles del hueco, para alisarlos después */
+    if(RSc) for(let a=0;a<AW*AH;a++) if(FN.hv[a]){ RS[a*3]-=FN.HP[a*3]; RS[a*3+1]-=FN.HP[a*3+1]; RS[a*3+2]-=FN.HP[a*3+2]; }
     /* Dibujo con dirección (rayas, tramas de seguridad): a lo largo de la raya el color
        no cambia, así que cada punto del trazo COPIA el fondo real que encuentra
        siguiendo la raya hacia los dos lados. Promediar lo dejaría deslavado. */
@@ -1007,6 +1018,12 @@ function rellenarFondo(cx,r,tinta){
       capa.forEach(([a,r0,r1,r2])=>{ RS[a*3]=r0; RS[a*3+1]=r1; RS[a*3+2]=r2; ok[a]=1; });
       faltan=resto;
     }
+    /* (v013) el promedio por capas deja facetas (polígonos); se alisa como una membrana
+       tensada entre sus bordes (cada punto = el promedio de sus 4 vecinos), sin tocar el borde */
+    if(RSc) for(let it=0;it<10;it++) for(const a of hs){ let s0=0,s1=0,s2=0,m=0;
+      for(const b of [a-1,a+1,a-AW,a+AW]){ if(b<0||b>=AW*AH||!ok[b]||(Math.abs((b%AW)-(a%AW))>1)) continue; s0+=RS[b*3]; s1+=RS[b*3+1]; s2+=RS[b*3+2]; m++; }
+      if(m){ RS[a*3]+=1.7*(s0/m-RS[a*3]); RS[a*3+1]+=1.7*(s1/m-RS[a*3+1]); RS[a*3+2]+=1.7*(s2/m-RS[a*3+2]); } }
+    if(RSc) for(let a=0;a<AW*AH;a++) if(FN.hv[a]){ RS[a*3]=RSc[a*3]; RS[a*3+1]=RSc[a*3+1]; RS[a*3+2]=RSc[a*3+2]; }   /* (v013) el borde vuelve a ser el real */
     /* 6) grano fino (papel, foto): lo que el promedio suaviza se devuelve, sacado del
           grano real de alrededor; en fondos limpios no se agrega nada */
     const fino=[]; for(let y=ay+1;y<by-1;y++) for(let x=ax+1;x<bx-1;x++){ if(!limpio(x,y)) continue; const a=A(x,y);
@@ -1014,9 +1031,11 @@ function rellenarFondo(cx,r,tinta){
       const g=[0,1,2].map(c=>RS[a*3+c]-(RS[(a-1)*3+c]+RS[(a+1)*3+c]+RS[(a-AW)*3+c]+RS[(a+AW)*3+c])/4); fino.push(g); }
     let fv=0; fino.forEach(g=>{ fv+=(g[0]*g[0]+g[1]*g[1]+g[2]*g[2])/3; });
     const conGrano=fino.length>20 && Math.sqrt(fv/fino.length)>2.5;
+    const GT=FN? granoTrasplantado(FN,AW,AH,ax,ay,X0,Y0,X1,Y1,B,hueco,limpio) : null;   /* (v013) el grano real de alrededor */
     for(let y=Y0;y<Y1;y++) for(let x=X0;x<X1;x++){ if(!hueco[I(x,y)]) continue; const a=A(x,y), k=K(x,y), b=base(x,y);
       const g=conGrano? fino[Math.floor(azar()*fino.length)] : [0,0,0];
-      for(let c=0;c<3;c++) D[k+c]=Math.max(0,Math.min(255,Math.round(b[c]+RS[a*3+c]+g[c]*0.8)));
+      const t=GT&&GT.ok[a]? [GT.v[a*3],GT.v[a*3+1],GT.v[a*3+2]] : [g[0]*0.8,g[1]*0.8,g[2]*0.8];   /* (v013) sin él: lo de antes */
+      for(let c=0;c<3;c++) D[k+c]=Math.max(0,Math.min(255,Math.round(b[c]+RS[a*3+c]+t[c])));
       D[k+3]=255; }
     cx.putImageData(img,ax,ay);
     return true;
@@ -1039,6 +1058,90 @@ function rellenarFondo(cx,r,tinta){
   }
   cx.putImageData(img,ax,ay);
   return true;
+}
+/* (v013 · 29-sep-2026) EL FONDO REHECHO, CON SU GRANO.
+   Pedido de la dueña: "donde estaba el dato viejo, el fondo se nota un poquito más claro".
+   Causa medida: el fondo rehecho quedaba LISO (con solo el 20-40 % del grano del papel de
+   al lado: el grano se ponía solo si pasaba un umbral, y como puntos sueltos al azar), así
+   que se veía un parche liso con la forma de las letras viejas. Y en papel muy granulado,
+   el promedio desde el borde estiraba el grano del borde y salían facetas de colores.
+   Ahora el fondo se separa en dos partes:
+   · lo GRUESO (manchas, degradados): se rehace promediando desde el borde, como antes,
+     pero sin el grano del borde (ya no salen facetas);
+   · lo FINO (el grano): se copia el grano REAL de alrededor, en cuadritos de S×S px, de la
+     franja de papel limpio (sin tinta ni su halo). Cada cuadrito se escoge entre varios
+     candidatos: el que mejor empalma con lo que ya hay alrededor (una trama fina sigue su
+     paso y el grano no hace costuras).
+   En un fondo liso (hoja digital blanca) lo fino vale 0: no se agrega nada.
+   Con rayas (dibujo con dirección) se deja todo como antes: ahí ya se copia la raya real.
+   Determinista (semilla fija): la vista previa y el PDF salen iguales. */
+/* lo FINO de un fondo: cada píxel conocido menos lo GRUESO de su vecindad (5×5). Lo grueso es
+   el plano que mejor pasa por sus vecinos conocidos (no el promedio: junto a un hueco el
+   promedio saldría corrido hacia un lado en un degradado; el plano no). */
+function parteFina(RS,con,AW,AH){
+  const n=AW*AH, HP=new Float32Array(n*3), hv=new Uint8Array(n);
+  for(let y=0;y<AH;y++) for(let x=0;x<AW;x++){ const a=y*AW+x; if(!con[a]) continue;
+    let m=0,sx=0,sy=0,sxx=0,sxy=0,syy=0; const sv=[0,0,0], sxv=[0,0,0], syv=[0,0,0];
+    for(let j=-2;j<=2;j++){ const yy=y+j; if(yy<0||yy>=AH) continue;
+      for(let i=-2;i<=2;i++){ const xx=x+i; if(xx<0||xx>=AW) continue; const b=yy*AW+xx; if(!con[b]) continue;
+        m++; sx+=i; sy+=j; sxx+=i*i; sxy+=i*j; syy+=j*j;
+        for(let c=0;c<3;c++){ const v=RS[b*3+c]; sv[c]+=v; sxv[c]+=i*v; syv[c]+=j*v; } } }
+    if(m<12) continue;
+    /* plano v = p + q·i + r·j por mínimos cuadrados; lo grueso en el centro es p */
+    const A11=sxx*syy-sxy*sxy, A12=sy*sxy-sx*syy, A13=sx*sxy-sy*sxx, det=m*A11+sx*A12+sy*A13;
+    for(let c=0;c<3;c++){
+      const p=Math.abs(det)>1e-6? (A11*sv[c]+A12*sxv[c]+A13*syv[c])/det : sv[c]/m;
+      HP[a*3+c]=RS[a*3+c]-p; }
+    hv[a]=1; }
+  return {HP,hv};
+}
+/* el grano para cada píxel del hueco, copiado en cuadritos del papel limpio de alrededor.
+   Devuelve {v,ok}, o null si no hay de dónde copiar (y entonces se hace lo de antes). */
+function granoTrasplantado(FN,AW,AH,ax,ay,X0,Y0,X1,Y1,B,hueco,limpio){
+  const W=X1-X0, n=AW*AH, HP=FN.HP, hv=FN.hv;
+  const src=new Uint8Array(n);                               /* de dónde se copia: papel limpio de afuera */
+  for(let y=0;y<AH;y++) for(let x=0;x<AW;x++){ const X=x+ax, Y=y+ay, a=y*AW+x;
+    if(hv[a] && !(X>=X0&&X<X1&&Y>=Y0&&Y<Y1) && limpio(X,Y)) src[a]=1; }
+  /* los cuadritos de origen: S×S px enteros de papel limpio */
+  let e2=0,n2=0; for(let a=0;a<n;a++) if(src[a]){ e2+=HP[a*3]**2+HP[a*3+1]**2+HP[a*3+2]**2; n2++; }
+  if(!n2 || Math.sqrt(e2/(3*n2))<0.35) return null;           /* papel sin grano (hoja digital): no hay nada que copiar */
+  const S=Math.max(3,Math.min(8,B)), iw=AW+1, iv=new Int32Array(iw*(AH+1));
+  for(let y=0;y<AH;y++){ let r=0; for(let x=0;x<AW;x++){ if(src[y*AW+x]) r++; iv[(y+1)*iw+x+1]=iv[y*iw+x+1]+r; } }
+  const anc=[];
+  for(let y=0;y+S<=AH;y++) for(let x=0;x+S<=AW;x++)
+    if(iv[(y+S)*iw+x+S]-iv[y*iw+x+S]-iv[(y+S)*iw+x]+iv[y*iw+x]===S*S) anc.push(y*AW+x);
+  if(anc.length<4) return null;
+  let s=(X0*2654435761^Y0*40503^W*69069^0x5bd1e995)>>>0;       /* azar propio: no cambia el de rellenarFondo */
+  const azar2=()=>{ s=(s+0x6D2B79F5)>>>0; let t=s; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return ((t^t>>>14)>>>0)/4294967296; };
+  const KH=HP.slice(), kn=hv.slice();                        /* lo que ya se conoce (y lo que se va copiando) */
+  const v=new Float32Array(n*3), ok=new Uint8Array(n), M=2, NC=40;
+  for(let ty=Y0-ay;ty<Y1-ay;ty+=S) for(let tx=X0-ax;tx<X1-ax;tx+=S){
+    const hx=Math.min(tx+S,X1-ax), hy=Math.min(ty+S,Y1-ay);
+    let hay=false; for(let y=ty;y<hy&&!hay;y++) for(let x=tx;x<hx;x++) if(hueco[(y+ay-Y0)*W+(x+ax-X0)]){ hay=true; break; }
+    if(!hay) continue;
+    /* el candidato que mejor empalma con lo conocido alrededor del cuadrito (±M px);
+       si alrededor no hay nada conocido, vale el primero */
+    let kq=0; for(let y=Math.max(0,ty-M);y<Math.min(AH,hy+M);y++) for(let x=Math.max(0,tx-M);x<Math.min(AW,hx+M);x++) if(kn[y*AW+x]) kq++;
+    let mejor=-1, eM=Infinity;
+    for(let c=0;c<(kq>=6? NC : 1);c++){
+      const o=anc[Math.floor(azar2()*anc.length)];
+      if(kq<6){ mejor=o; break; }
+      const ox=o%AW, oy=(o/AW)|0; let e=0, q=0;
+      for(let y=ty-M;y<hy+M;y++){ if(y<0||y>=AH) continue; const sy=oy+(y-ty); if(sy<0||sy>=AH) continue;
+        for(let x=tx-M;x<hx+M;x++){ if(x<0||x>=AW) continue; const a=y*AW+x; if(!kn[a]) continue;
+          const sx=ox+(x-tx); if(sx<0||sx>=AW) continue; const b=sy*AW+sx; if(!src[b]) continue;
+          e+=(KH[a*3]-HP[b*3])**2+(KH[a*3+1]-HP[b*3+1])**2+(KH[a*3+2]-HP[b*3+2])**2; q++; } }
+      if(q<6) continue;
+      if(e/q<eM){ eM=e/q; mejor=o; }
+    }
+    if(mejor<0) mejor=anc[Math.floor(azar2()*anc.length)];
+    const ox=mejor%AW, oy=(mejor/AW)|0;
+    for(let y=ty;y<hy;y++) for(let x=tx;x<hx;x++){ if(!hueco[(y+ay-Y0)*W+(x+ax-X0)]) continue;
+      const a=y*AW+x, b=(oy+y-ty)*AW+(ox+x-tx);
+      v[a*3]=HP[b*3]; v[a*3+1]=HP[b*3+1]; v[a*3+2]=HP[b*3+2]; ok[a]=1;
+      KH[a*3]=v[a*3]; KH[a*3+1]=v[a*3+1]; KH[a*3+2]=v[a*3+2]; kn[a]=1; }
+  }
+  return {v,ok};
 }
 /* La letra puede ser clara sobre un fondo oscuro (un encabezado, una foto). tintaDe
    busca lo más oscuro; si lo más claro se aleja MÁS del fondo, la letra es la clara.
@@ -1329,12 +1432,49 @@ async function planchaDe(page,vp,zonas){
      existía. En un PDF normal siempre se omite algo y todo sigue igual que antes. */
   return omitidos? c : null;
 }
-function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs){
+/* ============ (v014 · 30-sep-2026) APRENDER DEL CAMPO BUENO ============
+   Pedido de la dueña: "cada vez que capturo un campo, un botón: si me gusta cómo quedó,
+   replica esa misma estructura para los demás". Y con la hoja de "GUTIERREZ ARIZA /
+   JUAN JOSE": así de limpias y parejas deben salir TODAS.
+   Cómo: la dueña marca un campo como MODELO (una que salió bien). Los demás campos de
+   ESE mismo tamaño ya no adivinan su tamaño ni su grosor por su cuenta (que es lo que
+   fallaba: una basurita engañaba al lector) — copian los del modelo. Así la letra no
+   puede quedar chica ni flotando: el campo bueno manda.
+   Si no hay ningún modelo, TODO queda exactamente como antes. */
+function estiloModelo(cx,vp,page,P,r,it0,ESC,listaPg){
+  if(!listaPg||!Array.isArray(S.campos)) return null;
+  const modelos=S.campos.filter(f=>f&&f.modelo&&f.clave!==r.clave);
+  if(!modelos.length) return null;
+  const miT0=it0.h||10; let mejor=null,d0=Infinity;
+  for(const mc of modelos){
+    const rc=listaPg.find(x=>x&&x.clave===mc.clave); if(!rc) continue;          /* dónde está el modelo en esta hoja */
+    const tz=P.mapa.filter(m=>m.tIni<rc.fin&&m.tFin>rc.ini); if(!tz.length) continue;
+    const im=P.items[tz[0].it], T0m=im.h||10, d=Math.abs(Math.log(T0m/miT0));
+    if(d<d0){ d0=d; mejor=im; }                                                 /* el modelo más parecido en tamaño */
+  }
+  if(!mejor || d0>0.18) return null;              /* solo campos del MISMO tamaño (±20%); uno distinto (título, teléfono) no se fuerza */
+  return {T0:mejor.h||10, neg:negItem(cx,vp,page,P,mejor,ESC)};
+}
+/* el grosor (negrita) de un item — misma lógica que usa pintarCambio para el campo actual */
+function negItem(cx,vp,page,P,it,ESC){
+  try{
+    const FT=fuenteDe(page,it.font), nombre=FT.nombre, gen=((P.estilos||{})[it.font]||{}).fontFamily||"", pista=nombre+" "+gen;
+    const fam=/courier|mono|consol/i.test(pista)?'"Courier New",monospace':(/sans/i.test(gen)||/helvetica|arial|calibri|verdana|tahoma|segoe|roboto|lato|futura|gill|myriad|frutiger/i.test(nombre))?"Helvetica,Arial,sans-serif":/times|serif|roman|georgia|garamond|minion|book|cambria|palatino/i.test(pista)?'"Times New Roman",Times,serif':"Helvetica,Arial,sans-serif";
+    const famR=FT.viva?`"${FT.viva}",${fam}`:fam, cur=/italic|oblique/i.test(pista)?"italic ":"";
+    let neg=/bold|black|heavy|semibold|demibold|[-,_ ]bd\b|[-,_ ](7|8|9)00\b/i.test(pista)?"bold ":"";
+    if(!neg && !nombre){ const p=pesoPorTinta(cx,vp,it,it.h||10,famR,cur,ESC); if(p!==null) neg=p; }
+    return neg;
+  }catch(_){ return ""; }
+}
+function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs,listaPg){
   const campo=S.campos.find(f=>f.clave===r.clave);
   const nuevo=campo? String(campo.valor==null?"":campo.valor).trim() : "";
   const trozos=P.mapa.filter(m=>m.tIni<r.fin&&m.tFin>r.ini);
   if(!trozos.length) return;
   const it0=P.items[trozos[0].it];
+  /* (v014) si la dueña marcó un modelo, este campo (si es hoja-foto y no es el modelo)
+     copia su tamaño y grosor; si no hay modelo, mod=null y todo sigue igual */
+  const mod = (!conPlancha && !(campo&&campo.modelo)) ? estiloModelo(cx,vp,page,P,r,it0,ESC,listaPg) : null;
   /* la tipografía se deduce ANTES: hace falta para medir el ancho del texto viejo */
   const FT=fuenteDe(page,it0.font), nombre=FT.nombre;
   const gen=((P.estilos||{})[it0.font]||{}).fontFamily||"";
@@ -1354,6 +1494,7 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs){
     const p=pesoPorTinta(cx,vp,it0,it0.h||10,famR,cur,ESC);
     if(p!==null) neg=p;
   }
+  if(mod) neg=mod.neg;                        /* (v014) el grosor del campo modelo */
   /* dónde empieza y termina el dato dentro del fragmento: se MIDE con la fuente.
      Repartir el ancho en partes iguales entre las letras corría el recuadro y
      dejaba restos del texto viejo a la vista en tipografías proporcionales. */
@@ -1457,15 +1598,17 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs){
   const est={fam:/courier/i.test(fam)?"mono":/times/i.test(fam)?"serif":"sans", neg:!!neg, cur:!!cur};
   const letras=!conPlancha? glifosDe(P.num) : null;
   const dibujo=pal? pal.medio : nuevo;               /* lo que de verdad hay que dibujar */
-  const T0=it0.h||10;
+  const T0=mod? mod.T0 : (it0.h||10);                /* (v014) el tamaño del campo modelo */
   /* cómo se dibuja: sobre la línea base REAL (medida en la tinta, con su inclinación), con
      el espacio real entre palabras y el mismo apretado entre letras que tenía el dato viejo */
   let linea=null;
   if(med && med.linea){ const dyC=vp.convertToViewportPoint(0,baseD)[1]-vp.convertToViewportPoint(0,base)[1];
     linea={y0:med.linea.y0-med.linea.pend*desp*ESC+dyC, pend:med.linea.pend}; }
   const op={orig:cvOrig||null, linea, gapE:med? med.gapE : null, ajuste:0,
+    reglaFija: mod&&letras&&letras.hPorTam? mod.T0*letras.hPorTam : 0,   /* (v014) la regla (altura) del modelo manda */
     yl:vp.convertToViewportPoint(x1o,base)[1]/ESC,
     propio:[vp.convertToViewportPoint(x1o,base)[0]/ESC-T0*0.3, vp.convertToViewportPoint(x2o,base)[0]/ESC+T0*0.1]};
+  const T0f=letras? tamFuenteMedida(letras,cvOrig,ESC,op,T0,famR,est) : T0;   /* (v012) respaldo: misma altura de mayúscula */
   if(letras && med){ try{
     const v=viejo.replace(/\s+/g," ").trim(), nL=(v.match(/\S(?=\S)/g)||[]).length;
     const Wreal=med.palabras? med.palabras[med.palabras.length-1].b-med.palabras[0].a
@@ -1488,7 +1631,7 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs){
   if(!dibujo) W=0;
   else if(letras){ try{ const m=dibujarConGlifos(cx,vp,ESC,letras,dibujo,est,T0,xTexto,baseD,Infinity,famR,tinta,true,op);
     if(m){ W=m.ancho; conLetras=true; xDib=meta-m.ini; finT=m.fin; } }catch(e){ console.warn("letras de la hoja",e); } }
-  if(W===null){ cx.font=`${cur}${neg}${T0*ESC}px ${famR}`; W=cx.measureText(dibujo).width/ESC; }
+  if(W===null){ cx.font=`${cur}${neg}${T0f*ESC}px ${famR}`; W=cx.measureText(dibujo).width/ESC; }
   const finDib=xDib+(finT!=null? finT : W);            /* dónde acaba la tinta nueva */
   /* palabras del final que se quedan y lo nuevo es más corto: se arriman ellas solas a la
      izquierda, con el mismo espacio de antes (lo que venga después no se mueve) */
@@ -1526,7 +1669,7 @@ function pintarCambio(cx,vp,page,P,r,ESC,conPlancha,cvOrig,corrs){
     const g=dibujarConGlifos(cx,vp,ESC,letras,dibujo,est,T0,xDib,baseD,W*kf*ESC+0.5,famR,tinta,false,op);
     if(g) return {texto:nuevo, x:xIni, y:base, tam:g.tam, ancho:Math.max(0,finTodo(g.ancho)-xIni), fam, neg:!!neg, cur:!!cur, corr:cor};
   }catch(e){ console.warn("letras de la hoja",e); } }
-  const tam=T0*ESC*kf;
+  const tam=T0f*ESC*kf;
   cx.textBaseline="alphabetic"; cx.fillStyle=tinta;
   cx.font=`${cur}${neg}${tam}px ${famR}`;
   const b=vp.convertToViewportPoint(xTexto, baseD);
@@ -1903,7 +2046,7 @@ async function exportarIgual(op){
       if(!conPl && lista.length){                 /* hoja-imagen: se usan sus propias letras */
         btn.textContent="Preparando letras…"; try{ await asegurarGlifos(P.num); }catch(_){} btn.textContent="Armando…"; }
       const geos=new Map(), corrs=[];           /* por cada tramo: qué se escribió y dónde */
-      [...lista].sort((a,b)=>a.ini-b.ini).forEach(r=>{ try{ geos.set(r,pintarCambio(cx,vp,page,P,r,ESC,conPl,orig,corrs)); }catch(_){} });
+      [...lista].sort((a,b)=>a.ini-b.ini).forEach(r=>{ try{ geos.set(r,pintarCambio(cx,vp,page,P,r,ESC,conPl,orig,corrs,lista)); }catch(_){} });
       let capa=[]; try{ capa=capaTexto(page,P,vp,lista,geos,corrs); }catch(e){ console.error(e); capa=[]; }
       hojas.push({url:cv.toDataURL("image/png"), w:vp.width/ESC, h:vp.height/ESC, capa});
     }
@@ -2639,6 +2782,7 @@ function estiloPalabra(cx,w,pend){
   if(an<6||al<6) return null;
   let D; try{ D=cx.getImageData(x0,y0,an,al).data; }catch(_){ return null; }
   const R=mascaraTinta(D,an,al,pend); if(!R) return null;
+  limpiarMascaraPalabra(R,t);                 /* (v012) una mancha junto a la palabra no le infla la caja */
   const s=t.length>=3? inclinacion(R) : null;
   const cur= s===null? null : s>=0.15? true : s<=0.05? false : null;
   const sc={}, Ms={};
@@ -2861,6 +3005,7 @@ function libreriaGlifos(cx,E,palabras){
     sims.forEach((s,i)=>{ const b=s.bbox, wi=b.x1-b.x0, hi=b.y1-b.y0;
       if(wi<1||hi<1||wi>p.tam*2.5||hi>p.tam*2.5) return;
       const m=mascaraGlifo(cx,Math.max(0,b.x0-1),Math.max(0,b.y0-1),wi+3,hi+3); if(!m) return;
+      limpiarGlifo(m.canvas,s.text);            /* (v012) sin manchas ni pedazos de vecinas */
       const bs=baseEn((b.x0+b.x1)/2), c=s.text;
       /* El lector marca la caja de cada letra de forma aproximada: a veces se traga la
          vecina ("Me" anotada como "e", "00" como "0", "a." como "."). Cada recorte se
@@ -2870,6 +3015,7 @@ function libreriaGlifos(cx,E,palabras){
         bx0:b.x0/E,by0:b.y0/E,bx1:b.x1/E,by1:b.y1/E,
         izq:i>0?(b.x0-sims[i-1].bbox.x1)/p.tam:null, der:i+1<sims.length?(sims[i+1].bbox.x0-b.x1)/p.tam:null,
         conf:s.confidence,f,forma:f.fr-0.3*f.ar,tinta:m.tinta,mask:m.canvas,E};
+      e.pi=pi; e.si=i; e.cx0=Math.max(0,b.x0-1);  /* (v012) su palabra, su orden y dónde empieza el recorte */
       const g=c+"|"+k+"|"+Math.round(e.tam); (grupos[g]=grupos[g]||[]).push(e);
     });
   });
@@ -2891,6 +3037,7 @@ function libreriaGlifos(cx,E,palabras){
       e.malo=!ok; });
   }
   for(const g in grupos){ grupos[g]=grupos[g].filter(e=>!e.malo); if(!grupos[g].length) delete grupos[g]; }
+  const v2=estadisticasGlifos(grupos,palabras,E);   /* (v012) reglas, proporciones y espacios de tinta */
   /* espacio típico a cada lado de cada letra (por estilo), medido solo entre letras
      que pasaron la prueba de forma: así una caja mal marcada no descuadra nada */
   const lados={};
@@ -2902,7 +3049,7 @@ function libreriaGlifos(cx,E,palabras){
   const todas=[];
   for(const g in grupos) grupos[g].forEach(e=>{ const L=lados[e.c+"|"+e.fam+(e.neg?"b":"")+(e.cur?"i":"")]||{};
     todas.push({c:e.c,fam:e.fam,neg:e.neg,cur:e.cur,tam:e.tam,wi:e.wi,x:e.x,y:e.y,bx0:e.bx0,by0:e.by0,bx1:e.bx1,by1:e.by1,
-      izq:L.i??null,der:L.d??null,conf:e.conf,forma:e.forma}); });
+      izq:L.i??null,der:L.d??null,conf:e.conf,forma:e.forma,Hs:e.Hs,rh:e.rh,rw:e.rw}); });
   /* se guardan hasta 6 ejemplares por letra, estilo y tamaño: los de mejor forma */
   const ent={};
   for(const g in grupos){ const l=grupos[g].sort((a,b)=>(b.forma-a.forma)||(b.conf-a.conf)).slice(0,6);
@@ -2912,7 +3059,7 @@ function libreriaGlifos(cx,E,palabras){
   const todos=a=>{ const l=Object.values(a).flat(); return l.length? med(l) : null; };
   for(const pk in pares) pares[pk]=med(pares[pk]);
   const pasoDig={}; for(const k in pasos) if(pasos[k].length>=3) pasoDig[k]=med(pasos[k]);
-  return {ent, todas, gapL, gapE, pares, pasoDig, gapL0:todos(gL)??0.07, gapE0:todos(gE)??0.3};
+  return {ent, todas, gapL, gapE, pares, pasoDig, gapL0:todos(gL)??0.07, gapE0:todos(gE)??0.3, ...v2};
 }
 /* Se leen las letras de una hoja que aún no las tiene (un proyecto abierto otro día,
    o un PDF que salió de aquí sin su proyecto). Una hoja a la vez, en segundo plano. */
@@ -2985,7 +3132,9 @@ function recorteAcento(e){
   if(x1<x0) return null;
   const c=document.createElement("canvas"); c.width=x1-x0+1; c.height=y1-y0;
   c.getContext("2d").drawImage(m,x0,y0,c.width,c.height,0,0,c.width,c.height);
-  return {canvas:c, dx:(x0+x1+1)/2-(e.mx??1)-e.wi*e.E/2, arriba:(e.arriba*e.E-y0), sobrePie:pieDe(e)-y0, E:e.E, tam:e.tam};
+  const bd=bordesDe(e);                          /* (v012) centro de la TINTA de su letra y su regla */
+  return {canvas:c, dx:(x0+x1+1)/2-(e.mx??1)-e.wi*e.E/2, arriba:(e.arriba*e.E-y0), sobrePie:pieDe(e)-y0, E:e.E, tam:e.tam,
+          Hs:e.Hs, dxT:(x0+x1+1)/2-(bd.bl+bd.br+1)/2};
 }
 function acentoDe(lib,ch,est,T,pos,Ti,loc,propio){
   const d=[...ch.normalize("NFD")]; if(d.length!==2) return null;
@@ -3014,6 +3163,7 @@ function localesDe(lib,orig,ESC,yl,T){
     /* solo la caja de ESA letra: si la vecina asoma por el margen, se quita */
     const q=m.canvas.getContext("2d"), a=Math.max(0,Math.floor(e.bx0*ESC-X0-1)), b=Math.min(W,Math.ceil(e.bx1*ESC-X0+1));
     if(a>0) q.clearRect(0,0,a,H); if(b<W) q.clearRect(b,0,W-b,H);
+    limpiarGlifo(m.canvas,e.c);                   /* (v012) sin manchas */
     (out[e.c]=out[e.c]||[]).push({...e, tinta:m.tinta, mask:m.canvas, E:ESC, mx:e.bx0*ESC-X0, arriba:(e.y*ESC-Y0)/ESC, local:true});
   }
   cache.set(key,out); return out;
@@ -3046,6 +3196,7 @@ function pisaLinea(c,est){
 }
 function dibujarConGlifos(cx,vp,ESC,lib,texto,est,T,xTexto,base,dispo,fuenteCss,tinta,soloMedir,op){
   op=op||{};
+  if(lib&&lib.v2) return dibujarConGlifos2(cx,vp,ESC,lib,texto,est,T,xTexto,base,dispo,fuenteCss,tinta,soloMedir,op);   /* (v012) */
   const k=est.fam+(est.neg?"b":"")+(est.cur?"i":"");
   const gL=lib.gapL[k]??lib.gapL0, gE=lib.gapE[k]??lib.gapE0;
   /* espacio entre palabras: el real del dato viejo si se midió; ajuste: lo que le faltaba
@@ -3103,6 +3254,332 @@ function dibujarConGlifos(cx,vp,ESC,lib,texto,est,T,xTexto,base,dispo,fuenteCss,
     cx.drawImage(p.e.mask,gx,gy,p.e.mask.width*f,p.e.mask.height*f);
     if(p.ac){ const A=p.ac, fa=(T/A.tam)*kf*ESC/A.E;
       const cxm=xc+p.e.wi*p.e.E*f/2+A.dx*fa-A.canvas.width*fa/2, cym=by-(A.sobrePie!=null? A.sobrePie : A.arriba)*fa;
+      cx.drawImage(A.canvas,cxm,cym,A.canvas.width*fa,A.canvas.height*fa); }
+  }
+  cx.restore();
+  return {ancho:x*kf, tam:T*kf, ini:iT*kf, fin:fT*kf};
+}
+
+/* ============ letras de la hoja, versión 2 (v012 · 29-sep-2026) ============
+   Pedido de la dueña: que TODAS las letras salgan como en la imagen buena (mismo
+   tamaño, misma línea, mismo espacio), nunca más pequeñas, flotando o con manchas.
+   Causa medida en una hoja de prueba: una mancha cerca de una palabra le inflaba la
+   caja al lector → le calculaba mal el tamaño y la creía sin negrita → sus letras se
+   descartaban (salía la fuente de respaldo) o se pegaban a otra escala; y si la mancha
+   quedaba dentro de la caja de una letra, su "pie" era la mancha y la letra flotaba.
+   Cuatro partes, todas medidas en la tinta y no en las cajas del lector:
+   1. limpiar: cada letra (y cada palabra) sin manchas ni pedazos de vecinas; se quedan
+      el punto de la i y las tildes.
+   2. medir: la "regla" de cada palabra es la altura REAL de sus mayúsculas. La letra se
+      escala con regla del dato viejo / regla de donde viene (no con el tamaño estimado).
+   3. revisar: cada letra tiene que tener la proporción de sus hermanas en toda la hoja
+      (alto ±5 %, ancho ±10 %). Si no, otra muestra; si ninguna, la mejor corregida por
+      su propia medida; y si nada sirve, la fuente de respaldo con la MISMA altura.
+   4. espaciar: de tinta a tinta, con los espacios aprendidos de tinta a tinta.
+   Si algo de esto no se puede medir, se usa lo de antes (dibujarConGlifos original). */
+const MARCA_ARRIBA=/[ijíìîïáàâäéèêëóòôöúùûüñÁÀÂÄÉÈÊËÍÌÎÏÓÒÔÖÚÙÛÜÑ]/;   /* letras con punto o tilde separados */
+const MARCA_ABAJO=/[çÇ]/;
+const MAYUS_REGLA=/^[ABCDEFGHIKLMNOPRSTUVWXYZ]$/;                   /* van de la línea al techo (sin J, Q ni tildes) */
+const medianaV=a=>{ const b=a.slice().sort((x,y)=>x-y); return b.length? b[b.length>>1] : null; };
+const claveEst=e=>e.fam+(e.neg?"b":"")+(e.cur?"i":"");
+/* pedazos de tinta (vecinos de 8) de una máscara: m(i) dice si el píxel i es tinta */
+function pedazosTinta(w,h,m){
+  const lab=new Int32Array(w*h), comps=[], st=[];
+  for(let i=0;i<w*h;i++){
+    if(lab[i]||!m(i)) continue;
+    const o={id:comps.length+1,n:0,x0:w,x1:-1,y0:h,y1:-1}; lab[i]=o.id; st.push(i);
+    while(st.length){ const k=st.pop(), x=k%w, y=(k-x)/w; o.n++;
+      if(x<o.x0)o.x0=x; if(x>o.x1)o.x1=x; if(y<o.y0)o.y0=y; if(y>o.y1)o.y1=y;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ if(!dx&&!dy) continue;
+        const xx=x+dx, yy=y+dy; if(xx<0||yy<0||xx>=w||yy>=h) continue;
+        const kk=yy*w+xx; if(!lab[kk]&&m(kk)){ lab[kk]=o.id; st.push(kk); } } }
+    comps.push(o);
+  }
+  return {lab,comps};
+}
+/* PARTE 1 · la letra recortada, sin lo que no es suyo. Si no hay nada extraño, no se
+   toca ni un píxel. Devuelve true si quitó algo. */
+function limpiarGlifo(cv,c){
+  if(!cv||!/[\p{L}\p{N}]/u.test(c||"")) return false;          /* los signos se dejan como están */
+  const w=cv.width, h=cv.height; if(w<3||h<3) return false;
+  let q, img; try{ q=cv.getContext("2d"); img=q.getImageData(0,0,w,h); }catch(_){ return false; }
+  const A=img.data, {lab,comps}=pedazosTinta(w,h,i=>A[i*4+3]>64);
+  if(comps.length<2) return false;
+  comps.sort((a,b)=>b.n-a.n);
+  const main=comps[0], guarda=new Set([main.id]);
+  let by0=main.y0, by1=main.y1, bx0=main.x0, bx1=main.x1, hay=false;
+  const arriba=MARCA_ARRIBA.test(c), abajo=MARCA_ABAJO.test(c);
+  for(const o of comps.slice(1)){
+    const cols=Math.min(o.x1,bx1)-Math.max(o.x0,bx0)+1;
+    let suyo;
+    if(o.n>=main.n*0.35) suyo=true;                                        /* pedazo grande: letra rota */
+    else{
+      /* la tinta que ya se quedó, EN LAS FILAS de este pedazo: la astilla de la vecina
+         ("S." con el pie de la A, "L'" con la punta de la T) está suelta a un lado y toca el borde */
+      let mn=w, mx=-1;
+      for(let y=o.y0;y<=o.y1;y++) for(let x=0;x<w;x++) if(guarda.has(lab[y*w+x])){ if(x<mn) mn=x; if(x>mx) mx=x; }
+      if(mx>=0){                                                            /* al lado del cuerpo */
+        const suelto=o.x0>mx+1 || o.x1<mn-1, borde=o.x0<=1 || o.x1>=w-2;
+        suyo=!(suelto && borde);
+      }else{                                                                /* encima o debajo, separado */
+        const encima=o.y1<by0, debajo=o.y0>by1;
+        suyo=cols>0 && ((encima&&arriba) || (debajo&&abajo));               /* tilde, punto o cedilla */
+      }
+    }
+    if(suyo){ guarda.add(o.id); by0=Math.min(by0,o.y0); by1=Math.max(by1,o.y1); bx0=Math.min(bx0,o.x0); bx1=Math.max(bx1,o.x1); }
+    else hay=true;
+  }
+  if(!hay) return false;
+  /* lo que es de la mancha se va entero; el borde suave (sin pedazo) se va con lo que tenga
+     más cerca: si está más cerca de la letra se queda, si está más cerca de la mancha o de
+     nada, se va. Así la mancha pegadita a la letra no deja ni un resto. */
+  const dist=(x,y,quiere)=>{ let d=9;
+    for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){ const xx=x+dx, yy=y+dy; if(xx<0||yy<0||xx>=w||yy>=h) continue;
+      const l=lab[yy*w+xx]; if(l && guarda.has(l)===quiere){ const dd=Math.max(Math.abs(dx),Math.abs(dy)); if(dd<d) d=dd; } }
+    return d; };
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){ const i=y*w+x; if(!A[i*4+3]) continue;
+    const l=lab[i];
+    if(l){ if(!guarda.has(l)) A[i*4+3]=0; continue; }                      /* pedazo quitado: fuera */
+    const dk=dist(x,y,true), dr=dist(x,y,false);
+    if(dk>2 || dr<dk) A[i*4+3]=0; }                                          /* borde suave: con su dueño */
+  q.putImageData(img,0,0);
+  return true;
+}
+/* PARTE 1b · la palabra, antes de medir su tamaño y su negrita: una mancha arriba o
+   abajo de la palabra (separada de sus letras) no cuenta. La tilde y el punto de la i sí. */
+function limpiarMascaraPalabra(R,t){
+  try{
+    const {m,an,al}=R, {lab,comps}=pedazosTinta(an,al,i=>m[i]===1);
+    if(comps.length<2) return R;
+    const hMax=Math.max(...comps.map(o=>o.y1-o.y0+1)), nMax=Math.max(...comps.map(o=>o.n));
+    const altas=comps.filter(o=>(o.y1-o.y0+1)>=hMax*0.45);
+    const b0=Math.min(...altas.map(o=>o.y0)), b1=Math.max(...altas.map(o=>o.y1));
+    const arriba=MARCA_ARRIBA.test(t), abajo=MARCA_ABAJO.test(t);
+    const fuera=comps.filter(o=>o.n<nMax*0.2 && ((o.y1<b0 && !arriba) || (o.y0>b1 && !abajo)));
+    if(!fuera.length) return R;
+    const ids=new Set(fuera.map(o=>o.id));
+    for(let i=0;i<an*al;i++) if(ids.has(lab[i])) m[i]=0;
+    /* los bordes otra vez, con la misma regla de mascaraTinta */
+    const fil=new Uint32Array(al), col=new Uint32Array(an);
+    for(let y=0;y<al;y++) for(let x=0;x<an;x++) if(m[y*an+x]){ fil[y]++; col[x]++; }
+    const tf=Math.max(2,Math.round(an*0.01)); let x0=an,y0=al,x1=-1,y1=-1;
+    for(let y=0;y<al;y++) if(fil[y]>=tf){ if(y<y0)y0=y; if(y>y1)y1=y; }
+    for(let x=0;x<an;x++) if(col[x]>=2){ if(x<x0)x0=x; if(x>x1)x1=x; }
+    if(x1>=0&&y1>=0){ R.x0=x0; R.y0=y0; R.x1=x1; R.y1=y1; }
+  }catch(_){}
+  return R;
+}
+/* medidas de la tinta de una letra recortada (una sola vez por letra) */
+function medidaDe(e){
+  if(e.__md!==undefined) return e.__md;
+  let r=null;
+  try{ const m=e.mask, w=m.width, h=m.height, D=m.getContext("2d").getImageData(0,0,w,h).data;
+    let x0=w,x1=-1,y0=h,y1=-1;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(D[(y*w+x)*4+3]>127){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+    if(x1>=x0) r={hb:(y1-y0+1)/(e.E||1), wb:(x1-x0+1)/(e.E||1), bl:x0, br:x1, top:y0, pie:y1+1};
+  }catch(_){}
+  return e.__md=r;
+}
+/* PARTE 2 y 4 · con las letras buenas de la hoja: la regla de cada palabra (alto real de
+   sus mayúsculas, pt), la proporción típica de cada letra frente a esa regla y los
+   espacios de tinta a tinta. Deja en cada letra: Hs, rh, rw, ix0, ix1. */
+function estadisticasGlifos(grupos,palabras,E){
+  const porPal=new Map();
+  for(const g in grupos) for(const e of grupos[g]){
+    const m=medidaDe(e); if(!m) continue;
+    e.hb=m.hb; e.wb=m.wb; e.ix0=(e.cx0+m.bl)/E; e.ix1=(e.cx0+m.br+1)/E;
+    if(!porPal.has(e.pi)) porPal.set(e.pi,[]); porPal.get(e.pi).push(e); }
+  /* 1) regla fuerte: 2 o más mayúsculas que coinciden */
+  const regla=new Map(), fuerte=new Set();
+  porPal.forEach((l,pi)=>{ const h=l.filter(e=>MAYUS_REGLA.test(e.c)).map(e=>e.hb);
+    if(h.length>=3){ regla.set(pi,medianaV(h)); fuerte.add(pi); }
+    else if(h.length===2 && Math.abs(Math.log(h[0]/h[1]))<=0.06){ regla.set(pi,(h[0]+h[1])/2); fuerte.add(pi); }
+    else if(h.length===1) regla.set(pi,h[0]); });
+  /* 2) proporción de cada letra frente a la regla (primero las palabras fuertes); 3) las
+     palabras sin mayúsculas sacan su regla de sus letras. Dos vueltas para encadenar. */
+  let razon={};
+  const cubeta=H=>Math.round(Math.log(H)/Math.log(1.15));        /* tamaños parecidos (±7 %) */
+  const armar=soloFuertes=>{ const rz={};
+    porPal.forEach((l,pi)=>{ const H=regla.get(pi); if(!H) return; if(soloFuertes && !fuerte.has(pi)) return;
+      l.forEach(e=>{ const k=e.c+"|"+claveEst(e); (rz[k]=rz[k]||{h:[],w:[]}); rz[k].h.push(e.hb/H); rz[k].w.push(e.wb/H); }); });
+    return rz; };
+  for(let vuelta=0;vuelta<2;vuelta++){
+    const rzF=armar(true), rzT=armar(false); razon={};
+    for(const k in rzT){ const z=rzF[k]||rzT[k]; razon[k]={rh:medianaV(z.h), rw:medianaV(z.w), n:z.h.length}; }
+    porPal.forEach((l,pi)=>{ if(regla.has(pi)) return;
+      const v=l.map(e=>{ const R=razon[e.c+"|"+claveEst(e)]; return R&&R.rh>0? e.hb/R.rh : null; }).filter(x=>x>0);
+      if(v.length) regla.set(pi,medianaV(v)); });
+  }
+  porPal.forEach((l,pi)=>{ const H=regla.get(pi); if(!H) return; l.forEach(e=>{ e.Hs=H; e.rh=e.hb/H; e.rw=e.wb/H; }); });
+  /* las mismas proporciones pero solo entre letras de tamaño parecido: al escanear, una letra
+     chica engorda y se redondea distinto que una grande, así que se compara con sus iguales */
+  const rzC={}; porPal.forEach(l=>l.forEach(e=>{ if(!(e.Hs>0)) return; const k=e.c+"|"+claveEst(e)+"|"+cubeta(e.Hs);
+    (rzC[k]=rzC[k]||{h:[],w:[]}); rzC[k].h.push(e.rh); rzC[k].w.push(e.rw); }));
+  const razonT={}; for(const k in rzC) razonT[k]={rh:medianaV(rzC[k].h), rw:medianaV(rzC[k].w), n:rzC[k].h.length};
+  /* respaldo: cuánto mide la regla frente al tamaño que estimó el lector */
+  const hpt=[]; palabras.forEach((p,pi)=>{ if(fuerte.has(pi) && p.tam>0) hpt.push(regla.get(pi)/(p.tam/E)); });
+  /* 4) espacios de tinta a tinta, en reglas (R) y en tamaños (T) */
+  const tR={pares:{},lados:{},gapL:{}}, tT={pares:{},lados:{},gapL:{}}, todosR=[], todosT=[];
+  const mete=(t,k,v)=>{ (t[k]=t[k]||[]).push(v); };
+  porPal.forEach((l,pi)=>{
+    const p=palabras[pi]; if(!p) return;
+    const H=regla.get(pi), tm=p.tam/E, o=l.slice().sort((a,b)=>a.si-b.si);
+    for(let i=0;i+1<o.length;i++){ const a=o[i], b=o[i+1];
+      if(b.si!==a.si+1) continue;                                           /* no son vecinas */
+      const g=b.ix0-a.ix1, k=claveEst(a), pk=a.c+b.c+"|"+k;
+      if(tm>0){ const gT=g/tm; if(gT>-0.15&&gT<0.6){ mete(tT.pares,pk,gT); mete(tT.gapL,k,gT); todosT.push(gT);
+        (tT.lados[a.c+"|"+k]=tT.lados[a.c+"|"+k]||{i:[],d:[]}).d.push(gT); (tT.lados[b.c+"|"+k]=tT.lados[b.c+"|"+k]||{i:[],d:[]}).i.push(gT); } }
+      if(H>0){ const gR=g/H; if(gR>-0.2&&gR<0.8){ mete(tR.pares,pk,gR); mete(tR.gapL,k,gR); todosR.push(gR);
+        (tR.lados[a.c+"|"+k]=tR.lados[a.c+"|"+k]||{i:[],d:[]}).d.push(gR); (tR.lados[b.c+"|"+k]=tR.lados[b.c+"|"+k]||{i:[],d:[]}).i.push(gR); } }
+    }
+  });
+  const cerrar=(t,todos)=>{ const o={pares:{},lados:{},gapL:{},gapL0:todos.length? medianaV(todos) : null};
+    for(const k in t.pares) o.pares[k]=medianaV(t.pares[k]);
+    for(const k in t.gapL) o.gapL[k]=medianaV(t.gapL[k]);
+    for(const k in t.lados){ const L=t.lados[k]; o.lados[k]={i:L.i.length? medianaV(L.i) : null, d:L.d.length? medianaV(L.d) : null}; }
+    return o; };
+  return {razon, razonT, hPorTam:hpt.length? medianaV(hpt) : null, tintaR:cerrar(tR,todosR), tintaT:cerrar(tT,todosT), v2:true};
+}
+/* PARTE 2 · la regla del dato viejo: la de sus propias letras (mismo renglón); si no,
+   la de lo más cercano en su renglón; si no, el tamaño estimado por la proporción de la hoja */
+function reglaDestino(lib,loc,op,T){
+  const fija=op&&op.reglaFija>0? op.reglaFija : 0;   /* (v014) la regla del campo modelo */
+  if(!lib||!lib.v2) return fija||null;
+  let normal=null;
+  const pr=op&&op.propio, hs=[];
+  if(loc&&pr) for(const c in loc) for(const e of loc[c]) if(e.Hs>0 && e.x>=pr[0] && e.x<=pr[1]) hs.push(e.Hs);
+  if(hs.length) normal=medianaV(hs);
+  if(normal==null && loc&&pr){ let mejor=null, d0=Infinity;
+    for(const c in loc) for(const e of loc[c]){ if(!(e.Hs>0)) continue; const d=Math.min(Math.abs(e.x-pr[0]),Math.abs(e.x-pr[1])); if(d<d0&&d<T*4){ d0=d; mejor=e.Hs; } }
+    if(mejor) normal=mejor; }
+  if(normal==null && lib.hPorTam) normal=T*lib.hPorTam;
+  /* (v014) el modelo NO pisa una buena medida propia: si este campo se midió y coincide con
+     el modelo (±12 %), se respeta su medida (más exacta); solo si se aparta MUCHO del modelo
+     —señal de que se midió mal— el modelo lo rescata. Sin medida propia, manda el modelo. */
+  if(fija>0) return (normal>0 && Math.abs(Math.log(normal/fija))<=0.12)? normal : fija;
+  return normal;
+}
+/* la escala de una letra: regla del dato / regla de su palabra. Casi igual = 1 (copia
+   píxel a píxel, sin engordar ni adelgazar). Sin reglas: como antes. */
+function escalaGlifo(g,Hd,T){
+  if(Hd>0 && g.Hs>0){ const s=Hd/g.Hs; return Math.abs(Math.log(s))<0.03? 1 : s; }
+  return Math.abs(Math.log(T/g.tam))<0.05? 1 : T/g.tam;
+}
+/* PARTE 3 · ¿esta muestra tiene la proporción de sus hermanas en toda la hoja? */
+function revisarGlifo(lib,g){
+  const m=medidaDe(g); if(!m||!(g.Hs>0)) return {v:"ok",kh:1};
+  const kE=g.c+"|"+claveEst(g), RC=lib.razonT&&lib.razonT[kE+"|"+Math.round(Math.log(g.Hs)/Math.log(1.15))];
+  let R=RC, th=0.05, tw=0.10;
+  if(!R||R.n<2){ R=lib.razon&&lib.razon[kE]; th=0.08; tw=0.15; }
+  const rh=m.hb/g.Hs, rw=m.wb/g.Hs;
+  if(!R||R.n<2){                                    /* sin hermanas: una mayúscula debe medir su regla */
+    if(!MAYUS_REGLA.test(g.c)) return {v:"ok",kh:1};
+    const kh=rh; if(Math.abs(Math.log(kh))<=0.06) return {v:"ok",kh:1};
+    return Math.abs(Math.log(kh))<=0.35? {v:"escalable",kh} : {v:"no",kh}; }
+  const kh=rh/R.rh, kw=rw/R.rw;
+  if(Math.abs(Math.log(kh))<=th && Math.abs(Math.log(kw))<=tw) return {v:"ok",kh:1};
+  if(Math.abs(Math.log(kh/kw))<=0.06 && Math.abs(Math.log(kh))<=0.35) return {v:"escalable",kh};
+  return {v:"no",kh};
+}
+/* la mejor muestra QUE PASE la revisión (se usa elegirGlifo tal cual, quitando las que no pasan) */
+function elegirRevisado(lib,ch,est,T,pos,Ti,loc,propio,Hd){
+  const fuera=new Set(); let resp=null;
+  for(let n=0;n<12;n++){
+    const libF={ent:{[ch]:(lib.ent[ch]||[]).filter(e=>!fuera.has(e))}};
+    const locF=loc&&loc[ch]? {[ch]:loc[ch].filter(e=>!fuera.has(e))} : null;
+    const g=elegirGlifo(libF,ch,est,T,pos,Ti,locF,propio); if(!g) break;
+    const s=escalaGlifo(g,Hd,T);
+    if(g.local && propio && g.x>=propio[0] && g.x<=propio[1]) return {g,s,via:"suya"};   /* es del mismo dato viejo: es la referencia */
+    const r=revisarGlifo(lib,g);
+    if(r.v==="ok") return {g,s,via:"ok"};
+    if(r.v==="escalable" && !resp) resp={g,s:s/r.kh,via:"corregida"};
+    fuera.add(g);
+  }
+  return resp;
+}
+/* la letra de respaldo con la MISMA altura de mayúscula que el dato viejo */
+function tamFuenteDe(Hd,fuenteCss,est){
+  const k=fuenteCss+"|"+(est.neg?1:0)+(est.cur?1:0), C=tamFuenteDe.c||(tamFuenteDe.c=new Map());
+  let r=C.get(k);
+  if(r==null){
+    const c=document.createElement("canvas"); c.width=200; c.height=200; const q=c.getContext("2d");
+    q.font=`${est.cur?"italic ":""}${est.neg?"bold ":""}100px ${fuenteCss}`; q.fillStyle="#000"; q.textBaseline="alphabetic"; q.fillText("H",20,150);
+    const D=q.getImageData(0,0,200,200).data; let y0=200,y1=-1;
+    for(let y=0;y<200;y++) for(let x=0;x<200;x++) if(D[(y*200+x)*4+3]>127){ if(y<y0)y0=y; if(y>y1)y1=y; }
+    r=y1>=y0? (y1-y0+1)/100 : 0.72; C.set(k,r);
+  }
+  return Hd/r;
+}
+function tamFuenteMedida(lib,orig,ESC,op,T,fuenteCss,est){
+  try{ if(!lib||!lib.v2) return T;
+    const loc=orig? localesDe(lib,orig,ESC,op&&op.yl!=null? op.yl : 0,T) : null;
+    const Hd=reglaDestino(lib,loc,op,T);
+    return Hd>0? tamFuenteDe(Hd,fuenteCss,est) : T;
+  }catch(_){ return T; }
+}
+/* PARTE 4 · el espacio de tinta a tinta entre dos letras, en unidades de la regla (o del
+   tamaño, si no hay regla): el del par tal como está en el documento; si no, el de los lados
+   de cada letra; si no, el típico del estilo; al final el de toda la hoja.
+   (Se probó separarlo por tamaños y corregir entre tamaños: con pocas muestras por tamaño
+   salió peor, 88 % → 64 % de parecido. No se usa.) */
+function huecoTinta(tab,a,b,k,Hd,gL0){
+  if(!tab) return gL0;
+  const par=tab.pares[a+b+"|"+k], La=tab.lados[a+"|"+k], Lb=tab.lados[b+"|"+k];
+  return par!=null? par : (La&&La.d!=null&&Lb&&Lb.i!=null)? (La.d+Lb.i)/2 : (tab.gapL[k]??gL0);
+}
+/* PARTE 3 y 4 al dibujar: igual que dibujarConGlifos, pero cada letra se elige revisada,
+   se escala con las reglas y se coloca de tinta a tinta */
+function dibujarConGlifos2(cx,vp,ESC,lib,texto,est,T,xTexto,base,dispo,fuenteCss,tinta,soloMedir,op){
+  const k=claveEst(est);
+  const p0=vp.convertToViewportPoint(xTexto,base), pos={x:p0[0]/ESC, y:p0[1]/ESC};
+  const loc=op.orig? localesDe(lib,op.orig,ESC,op.yl!=null? op.yl : pos.y,T) : null;
+  const Ti=(String(tinta).match(/\d+/g)||[]).slice(0,3).map(Number), Tv=Ti.length===3? Ti : null;
+  const Hd=reglaDestino(lib,loc,op,T);
+  /* los espacios: en reglas si se midió la del dato; si no, en tamaños (como antes) */
+  const U=Hd>0? Hd : T, tab=Hd>0? lib.tintaR : lib.tintaT;
+  const gL0=(tab&&tab.gapL0!=null)? tab.gapL0 : (lib.gapL0??0.07)*(Hd>0&&lib.hPorTam? 1/lib.hPorTam : 1);
+  const gE=lib.gapE[k]??lib.gapE0, gEp=op.gapE!=null? op.gapE : gE*T, aj=op.ajuste||0;
+  const Tf=Hd>0? tamFuenteDe(Hd,fuenteCss,est) : T;
+  const letra=px=>`${est.cur?"italic ":""}${est.neg?"bold ":""}${Math.max(1,px)}px ${fuenteCss}`;
+  cx.save(); cx.font=letra(Tf);
+  const piezas=[]; let x=0, prev=null, prevC="", prevCentro=0, faltan=0, total=0;
+  for(const ch of texto){
+    if(/\s/.test(ch)){ x+=gEp; prev=null; continue; }
+    total++;
+    let g=null, s=1, a=null;
+    const sel=elegirRevisado(lib,ch,est,T,pos,Tv,loc,op.propio,Hd);
+    if(sel){ g=sel.g; s=sel.s; }
+    else{ a=acentoDe(lib,ch,est,T,pos,Tv,loc,op.propio); if(a){ g=a.base; s=escalaGlifo(g,Hd,T); } }
+    if(!g){ faltan++; if(prev) x+=gL0*U*0.5; const wc=cx.measureText(ch).width; piezas.push({f:ch,x,w:wc}); x+=wc; prev={fb:true}; prevC=ch; continue; }
+    const b=bordesDe(g), iw=(b.br-b.bl+1)/(g.E||1)*s;                /* ancho de la TINTA (pt) */
+    const paso=lib.pasoDig&&lib.pasoDig[k];
+    if(prev&&!prev.fb&&paso&&/^\d$/.test(prevC)&&/^\d$/.test(ch)) x=prevCentro+paso*T-iw/2+aj;   /* cifra tras cifra: paso fijo */
+    else if(prev){
+      if(prev.fb) x+=gL0*U*0.5;
+      else{ const gp=huecoTinta(tab,prevC,ch,k,Hd,gL0);
+        x+=gp*U+aj; }
+    }
+    piezas.push({e:g, ac:a&&a.acento, x, s, iw, bl:b.bl}); prevCentro=x+iw/2; x+=iw; prev=g; prevC=ch;
+  }
+  cx.restore();
+  if(!total || faltan/total>0.25) return null;            /* muchas faltan: mejor todo con la fuente */
+  let iT=Infinity, fT=-Infinity;
+  for(const p of piezas){ const w=p.f!==undefined? (p.w||0) : p.iw; iT=Math.min(iT,p.x); fT=Math.max(fT,p.x+w); }
+  if(!isFinite(iT)){ iT=0; fT=x; }
+  if(soloMedir) return {ancho:x, tam:T, ini:iT, fin:fT};
+  const kf=x*ESC>dispo? Math.max(0.37,dispo/(x*ESC)) : 1;
+  const bx=p0[0], L=op.linea, yEn=xc=>L? L.y0+L.pend*xc : p0[1];
+  cx.save(); cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality="high";
+  for(const p of piezas){
+    const xc=bx+p.x*ESC*kf;
+    if(p.f!==undefined){ cx.fillStyle=tinta; cx.textBaseline="alphabetic"; cx.font=letra(Tf*ESC*kf); cx.fillText(p.f,xc,yEn(xc)); continue; }
+    const f=p.s*kf*ESC/(p.e.E||1);                       /* px del destino por px de la letra recortada */
+    const by=yEn(xc+p.iw*kf*ESC/2);
+    let gx=xc-f*p.bl, gy=pisaLinea(p.e.c,est)? by-pieDe(p.e)*f : by-p.e.arriba*p.s*kf*ESC;
+    if(Math.abs(f-1)<0.03){ gx=Math.round(gx); gy=Math.round(gy); }   /* misma escala: copia píxel a píxel */
+    cx.drawImage(p.e.mask,gx,gy,p.e.mask.width*f,p.e.mask.height*f);
+    if(p.ac){ const A=p.ac, fa=((A.Hs>0&&Hd>0)? Hd/A.Hs : T/A.tam)*kf*ESC/A.E;
+      const cxm=xc+p.iw*kf*ESC/2+(A.dxT!=null? A.dxT : A.dx)*fa-A.canvas.width*fa/2, cym=by-(A.sobrePie!=null? A.sobrePie : A.arriba)*fa;
       cx.drawImage(A.canvas,cxm,cym,A.canvas.width*fa,A.canvas.height*fa); }
   }
   cx.restore();
@@ -3395,7 +3872,7 @@ async function pintarCalcado(){
     cx.clearRect(0,0,o.vis.width,o.vis.height);
     cx.drawImage(o.limpio||o.base,0,0);
     const corrs=[];
-    [...lista].sort((a,b)=>a.ini-b.ini).forEach(r=>{ try{ pintarCambio(cx,o.vp,o.page,o.P,r,ESC_PREV,!!o.limpio,o.base,corrs); }catch(_){} });
+    [...lista].sort((a,b)=>a.ini-b.ini).forEach(r=>{ try{ pintarCambio(cx,o.vp,o.page,o.P,r,ESC_PREV,!!o.limpio,o.base,corrs,lista); }catch(_){} });
   }
 }
 function pedirPrevia(){
